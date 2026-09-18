@@ -631,6 +631,7 @@ DEFAULT_SETTINGS = {
     "site_body_font": "system",
     "site_heading_font": "system",
     "site_base_font_size": "16",
+    "use_new_homepage": "0",
 }
 
 

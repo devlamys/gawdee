@@ -6,7 +6,8 @@ import { OfferPopup } from '@/components/OfferPopup';
 import { RailButton } from '@/components/RailButton';
 import { NewsletterForm } from '@/components/NewsletterForm';
 import { api } from '@/lib/api';
-import { CatalogCategory, CatalogItem, Testimonial } from '@/types';
+import { CatalogCategory, CatalogItem, StorefrontSettings, Testimonial } from '@/types';
+import { NewHomePage } from '@/components/new-home/NewHomePage';
 import { resolveImageUrl } from '@/lib/utils';
 
 // Static artwork for category cards (icons only). Names, links and order
@@ -28,6 +29,8 @@ export default async function HomePage() {
   let offerPopupEnabled = true;
   let offerPopupImage = '';
   let offerPopupDelayMs = 1200;
+  let storeSettings: StorefrontSettings = {};
+  let useNewHomepage = false;
 
   try {
     const itemsRes = await api.catalog.getItems();
@@ -59,12 +62,15 @@ export default async function HomePage() {
   try {
     const storeRes = await api.getStorefront();
     if (storeRes?.ok && storeRes.settings) {
+      storeSettings = storeRes.settings;
       offerCode = storeRes.settings.offer_code || '';
       offerPercent = storeRes.settings.offer_percent || '';
       offerPopupEnabled = storeRes.settings.offer_popup_enabled !== '0';
       offerPopupImage = storeRes.settings.offer_popup_image || '';
       const delay = Number(storeRes.settings.offer_popup_delay_ms);
       if (Number.isFinite(delay) && delay >= 0) offerPopupDelayMs = delay;
+      const flag = storeRes.settings.use_new_homepage;
+      useNewHomepage = flag === '1' || (flag as unknown) === true;
     }
   } catch {
     // Offer section stays hidden when the backend provides no offer.
@@ -73,6 +79,24 @@ export default async function HomePage() {
   // Featured rail: first items returned by the backend (each item already
   // groups its variants — no client-side family reconstruction). Real data only.
   const featuredItems = items.slice(0, 6);
+
+  // Flag-gated homepage: ON renders the new reference design, OFF keeps the
+  // exact legacy homepage below untouched. OfferPopup stays on both versions.
+  if (useNewHomepage) {
+    return (
+      <>
+        <NewHomePage
+          items={items}
+          categories={categories}
+          testimonials={testimonials}
+          storeSettings={storeSettings}
+        />
+        {offerPopupEnabled && offerCode && (
+          <OfferPopup code={offerCode} image={resolveImageUrl(offerPopupImage) || '/assets/images/independence-offer-popup-v1.webp'} delayMs={offerPopupDelayMs} />
+        )}
+      </>
+    );
+  }
 
   return (
     <>

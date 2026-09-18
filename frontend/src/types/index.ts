@@ -325,6 +325,7 @@ export interface StorefrontSettings {
   site_density?: string;
   site_design_v1?: string;
   storefront_collections_v1?: string;
+  use_new_homepage?: string;
 }
 
 export interface StorefrontResponse {

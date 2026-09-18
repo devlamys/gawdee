@@ -306,6 +306,7 @@ async def storefront_settings(db: aiosqlite.Connection = Depends(db_dep)):
         "whatsapp_otp_enabled", "whatsapp_cloud_enabled", "whatsapp_order_notifications", "whatsapp_number",
         "page_shipping", "page_returns", "page_contact",
         "site_design_v1", "storefront_collections_v1",
+        "use_new_homepage",
     ]
     settings = {}
     for key in public_keys:

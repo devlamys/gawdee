@@ -1265,6 +1265,31 @@ function AdminPageContent() {  const searchParams = useSearchParams();
           <form onSubmit={handleSaveSettings} className="admin-form" style={{ maxWidth: '640px' }}>
             {view === 'settings' && (
               <>
+                <div
+                  style={{
+                    marginBottom: '16px',
+                    border: '1px solid var(--line, #e2e8e4)',
+                    borderLeft: '4px solid #009a84',
+                    borderRadius: '12px',
+                    padding: '12px 14px',
+                    background: 'var(--surface, #f6faf7)',
+                  }}
+                >
+                  <label className="form-switch" style={{ padding: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={settings.use_new_homepage === '1'}
+                      onChange={(e) =>
+                        setSettings({ ...settings, use_new_homepage: e.target.checked ? '1' : '0' })
+                      }
+                    />
+                    <span><strong>Use New Home Page</strong></span>
+                  </label>
+                  <p style={{ margin: '8px 0 0', fontSize: '0.8rem', opacity: 0.75 }}>
+                    ON = new reference design (PDF + screenshots). OFF = current live homepage.
+                    Safe to toggle anytime.
+                  </p>
+                </div>
                 <label>
                   <span>Brand Name</span>
                   <input
