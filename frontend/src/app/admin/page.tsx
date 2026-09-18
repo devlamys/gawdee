@@ -1106,9 +1106,21 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                       <i className="ph ph-tag"></i> {r.product_slug}
                     </small>
                   )}
-                  <div style={{ marginTop: 'auto', paddingTop: '10px', display: 'flex', justifyContent: 'flex-end' }}>
+                  <div style={{ marginTop: 'auto', paddingTop: '10px', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                     <button
                       type="button"
+                      title="Edit reel"
+                      onClick={() => {
+                        setModalData({ ...r });
+                        setActiveModal('reel');
+                      }}
+                      className="admin-action-icon"
+                    >
+                      <i className="ph ph-pencil-simple"></i>
+                    </button>
+                    <button
+                      type="button"
+                      title="Delete reel"
                       onClick={async () => {
                         if (confirm('Delete this reel?')) {
                           await adminApi.deleteReel(r.id);
@@ -1141,7 +1153,24 @@ function AdminPageContent() {  const searchParams = useSearchParams();
               className="admin-button admin-button--primary"
               type="button"
               onClick={() => {
-                setModalData({ title: '', cat: 'Ghee', price_label: '', mrp_label: '' });
+                setModalData({
+                  title: '',
+                  cat: 'Ghee',
+                  title_html: '',
+                  word: '',
+                  sub: '',
+                  price_label: '',
+                  mrp_label: '',
+                  off_badge: '',
+                  reviews_label: '',
+                  product_image: '',
+                  cart_id: '',
+                  cart_name: '',
+                  cart_price: 0,
+                  cart_image: '',
+                  sort_order: bannersTwo.length,
+                  is_active: true,
+                });
                 setActiveModal('banner_two');
               }}
             >
@@ -1161,6 +1190,14 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                 </tr>
               </thead>
               <tbody>
+                {bannersTwo.length === 0 && (
+                  <tr className="admin-table__empty">
+                    <td colSpan={5}>
+                      <i className="ph ph-film-strip" style={{ fontSize: '1.6rem', display: 'block', marginBottom: '8px' }}></i>
+                      No slides yet — click &ldquo;Add Slide&rdquo; to create the first 3D hero slide.
+                    </td>
+                  </tr>
+                )}
                 {bannersTwo.map((b) => (
                   <tr key={b.id}>
                     <td>
@@ -1174,22 +1211,36 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                       <img
                         src={b.product_image ? `/${b.product_image.replace(/^\//, '')}` : '/assets/images/logo.png'}
                         alt={b.title}
-                        style={{ width: '45px', height: '45px', objectFit: 'contain' }}
+                        style={{ width: '45px', height: '45px', objectFit: 'contain', borderRadius: '10px', border: '1px solid #e1e7e2', background: '#f6f8f6' }}
                       />
                     </td>
                     <td>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (confirm('Delete banner slide?')) {
-                            await adminApi.deleteBannerTwo(b.id);
-                            loadViewData();
-                          }
-                        }}
-                        className="admin-action-icon admin-action-icon--danger"
-                      >
-                        <i className="ph ph-trash"></i>
-                      </button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button
+                          type="button"
+                          title="Edit slide"
+                          onClick={() => {
+                            setModalData({ ...b });
+                            setActiveModal('banner_two');
+                          }}
+                          className="admin-action-icon"
+                        >
+                          <i className="ph ph-pencil-simple"></i>
+                        </button>
+                        <button
+                          type="button"
+                          title="Delete slide"
+                          onClick={async () => {
+                            if (confirm('Delete banner slide?')) {
+                              await adminApi.deleteBannerTwo(b.id);
+                              loadViewData();
+                            }
+                          }}
+                          className="admin-action-icon admin-action-icon--danger"
+                        >
+                          <i className="ph ph-trash"></i>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1543,6 +1594,502 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                   disabled={uploadingImage}
                 >
                   <i className="ph ph-check"></i> {modalData.id ? 'Update Category' : 'Create Category'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ──────────────────────────────────────────────────────────────────────────
+          MODAL: ADD / EDIT HERO 3D SLIDE (BANNERS TWO)
+          ────────────────────────────────────────────────────────────────────────── */}
+      {activeModal === 'banner_two' && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.6)',
+            zIndex: 99999,
+            display: 'grid',
+            placeItems: 'center',
+            padding: '20px',
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '20px',
+              maxWidth: '680px',
+              width: '100%',
+              maxHeight: '92vh',
+              overflowY: 'auto',
+              padding: '28px',
+              boxShadow: '0 25px 60px rgba(0,0,0,0.22)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '14px', borderBottom: '1px solid #e1e7e2' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#005c4e' }}>
+                  {modalData.id ? `Edit Slide: ${modalData.title}` : 'New Hero 3D Slide'}
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '0.72rem', color: '#7b8981' }}>
+                  Slides rotate in the homepage 3D carousel. Prices/ratings merge from live catalog data.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveModal(null)}
+                style={{ background: '#f0f4f2', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'grid', placeItems: 'center', fontSize: '1.1rem', cursor: 'pointer', color: '#445', flexShrink: 0 }}
+              >
+                <i className="ph ph-x"></i>
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  const title = (modalData.title || '').trim();
+                  if (title.length < 2) throw new Error('Slide title must be at least 2 characters.');
+                  await adminApi.saveBannerTwo({
+                    id: modalData.id || undefined,
+                    title,
+                    cat: modalData.cat || '',
+                    title_html: modalData.title_html || '',
+                    word: modalData.word || '',
+                    sub: modalData.sub || '',
+                    price_label: modalData.price_label || '',
+                    mrp_label: modalData.mrp_label || '',
+                    off_badge: modalData.off_badge || '',
+                    reviews_label: modalData.reviews_label || '',
+                    product_image: modalData.product_image || '',
+                    cart_id: modalData.cart_id || '',
+                    cart_name: modalData.cart_name || '',
+                    cart_price: Math.max(0, parseInt(modalData.cart_price ?? 0) || 0),
+                    cart_image: modalData.cart_image || '',
+                    sort_order: Math.max(0, parseInt(modalData.sort_order ?? 0) || 0),
+                    is_active: modalData.is_active !== false,
+                  });
+                  showFlash(modalData.id ? 'Slide updated successfully' : 'Slide created successfully');
+                  setActiveModal(null);
+                  loadViewData();
+                } catch (err) {
+                  showFlash(err instanceof Error ? err.message : 'Failed to save slide', 'error');
+                }
+              }}
+              className="admin-form"
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <label>
+                  <span>Slide Title *</span>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. A2 Gir Cow Ghee"
+                    value={modalData.title || ''}
+                    onChange={(e) => setModalData({ ...modalData, title: e.target.value })}
+                  />
+                </label>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <label>
+                    <span>Category Pill</span>
+                    <input
+                      type="text"
+                      placeholder="e.g. A2 Vedic • Grass-Fed"
+                      value={modalData.cat || ''}
+                      onChange={(e) => setModalData({ ...modalData, cat: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>Background Word</span>
+                    <input
+                      type="text"
+                      placeholder="e.g. GHEE"
+                      value={modalData.word || ''}
+                      onChange={(e) => setModalData({ ...modalData, word: e.target.value })}
+                    />
+                  </label>
+                </div>
+
+                <label>
+                  <span>Title HTML (use &lt;br&gt; and &lt;span&gt; for the two-line look)</span>
+                  <input
+                    type="text"
+                    placeholder="e.g. A2 Vedic<br><span>Gir Cow Ghee</span>"
+                    value={modalData.title_html || ''}
+                    onChange={(e) => setModalData({ ...modalData, title_html: e.target.value })}
+                  />
+                </label>
+
+                <label>
+                  <span>Subtitle</span>
+                  <input
+                    type="text"
+                    placeholder="Short slide description shown under the title"
+                    value={modalData.sub || ''}
+                    onChange={(e) => setModalData({ ...modalData, sub: e.target.value })}
+                  />
+                </label>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <label>
+                    <span>Display Price</span>
+                    <input
+                      type="text"
+                      placeholder="e.g. ₹649"
+                      value={modalData.price_label || ''}
+                      onChange={(e) => setModalData({ ...modalData, price_label: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>MRP Label</span>
+                    <input
+                      type="text"
+                      placeholder="e.g. ₹799"
+                      value={modalData.mrp_label || ''}
+                      onChange={(e) => setModalData({ ...modalData, mrp_label: e.target.value })}
+                    />
+                  </label>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <label>
+                    <span>Offer Badge</span>
+                    <input
+                      type="text"
+                      placeholder="e.g. Save 19%"
+                      value={modalData.off_badge || ''}
+                      onChange={(e) => setModalData({ ...modalData, off_badge: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>Reviews Label</span>
+                    <input
+                      type="text"
+                      placeholder="e.g. 4.8 — 120 reviews"
+                      value={modalData.reviews_label || ''}
+                      onChange={(e) => setModalData({ ...modalData, reviews_label: e.target.value })}
+                    />
+                  </label>
+                </div>
+
+                <label>
+                  <span>Product Image (cutout PNG/WebP)</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {(modalData.product_image) && (
+                      <img
+                        src={`/${String(modalData.product_image).replace(/^\//, '')}`}
+                        alt=""
+                        style={{ width: '44px', height: '44px', objectFit: 'contain', borderRadius: '8px', border: '1px solid #e1e7e2', background: '#f6f8f6', flexShrink: 0 }}
+                      />
+                    )}
+                    <input
+                      type="text"
+                      placeholder="/assets/uploads/... or upload"
+                      value={modalData.product_image || ''}
+                      onChange={(e) => setModalData({ ...modalData, product_image: e.target.value })}
+                      style={{ flex: 1 }}
+                    />
+                    <label
+                      className="admin-button admin-button--ghost"
+                      style={{ whiteSpace: 'nowrap', cursor: 'pointer', padding: '9px 12px' }}
+                    >
+                      <i className="ph ph-upload-simple"></i> Upload
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleUploadImage(file, (url) => {
+                              setModalData((prev: any) => ({ ...prev, product_image: url }));
+                            }, 'banners');
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </label>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <label>
+                    <span>Cart Product ID (variant slug/id — links live price &amp; stock)</span>
+                    <input
+                      type="text"
+                      placeholder="e.g. gawdee-gir-cow-a2-ghee-500-ml"
+                      value={modalData.cart_id || ''}
+                      onChange={(e) => setModalData({ ...modalData, cart_id: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>Cart Product Name</span>
+                    <input
+                      type="text"
+                      placeholder="e.g. Gawdee Gir Cow A2 Ghee 500ml"
+                      value={modalData.cart_name || ''}
+                      onChange={(e) => setModalData({ ...modalData, cart_name: e.target.value })}
+                    />
+                  </label>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <label>
+                    <span>Cart Price (₹)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={modalData.cart_price ?? 0}
+                      onChange={(e) => setModalData({ ...modalData, cart_price: parseInt(e.target.value) || 0 })}
+                    />
+                  </label>
+                  <label>
+                    <span>Sort Order</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={modalData.sort_order ?? 0}
+                      onChange={(e) => setModalData({ ...modalData, sort_order: parseInt(e.target.value) || 0 })}
+                    />
+                  </label>
+                </div>
+
+                <label>
+                  <span>Cart Image</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {(modalData.cart_image) && (
+                      <img
+                        src={`/${String(modalData.cart_image).replace(/^\//, '')}`}
+                        alt=""
+                        style={{ width: '44px', height: '44px', objectFit: 'contain', borderRadius: '8px', border: '1px solid #e1e7e2', background: '#f6f8f6', flexShrink: 0 }}
+                      />
+                    )}
+                    <input
+                      type="text"
+                      placeholder="/assets/uploads/... or upload"
+                      value={modalData.cart_image || ''}
+                      onChange={(e) => setModalData({ ...modalData, cart_image: e.target.value })}
+                      style={{ flex: 1 }}
+                    />
+                    <label
+                      className="admin-button admin-button--ghost"
+                      style={{ whiteSpace: 'nowrap', cursor: 'pointer', padding: '9px 12px' }}
+                    >
+                      <i className="ph ph-upload-simple"></i> Upload
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleUploadImage(file, (url) => {
+                              setModalData((prev: any) => ({ ...prev, cart_image: url }));
+                            }, 'banners');
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </label>
+
+                <label className="form-switch" style={{ padding: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={modalData.is_active !== false}
+                    onChange={(e) => setModalData({ ...modalData, is_active: e.target.checked })}
+                  />
+                  <span>Slide is visible in the carousel</span>
+                </label>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                <button
+                  type="button"
+                  className="admin-button admin-button--ghost"
+                  onClick={() => setActiveModal(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="admin-button admin-button--primary"
+                  disabled={uploadingImage}
+                >
+                  <i className="ph ph-check"></i> {modalData.id ? 'Update Slide' : 'Create Slide'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ──────────────────────────────────────────────────────────────────────────
+          MODAL: ADD / EDIT REEL
+          ────────────────────────────────────────────────────────────────────────── */}
+      {activeModal === 'reel' && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.6)',
+            zIndex: 99999,
+            display: 'grid',
+            placeItems: 'center',
+            padding: '20px',
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '20px',
+              maxWidth: '560px',
+              width: '100%',
+              maxHeight: '92vh',
+              overflowY: 'auto',
+              padding: '28px',
+              boxShadow: '0 25px 60px rgba(0,0,0,0.22)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '14px', borderBottom: '1px solid #e1e7e2' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#005c4e' }}>
+                  {modalData.id ? `Edit Reel: ${modalData.title}` : 'New Reel'}
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '0.72rem', color: '#7b8981' }}>
+                  Instagram-style video clips linking to catalog products.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveModal(null)}
+                style={{ background: '#f0f4f2', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'grid', placeItems: 'center', fontSize: '1.1rem', cursor: 'pointer', color: '#445', flexShrink: 0 }}
+              >
+                <i className="ph ph-x"></i>
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  const title = (modalData.title || '').trim();
+                  if (title.length < 2) throw new Error('Reel title must be at least 2 characters.');
+                  await adminApi.saveReel({
+                    id: modalData.id || undefined,
+                    title,
+                    subtitle: modalData.subtitle || '',
+                    file_path: modalData.file_path || '',
+                    poster_path: modalData.poster_path || '',
+                    external_url: modalData.external_url || '',
+                    link_url: modalData.link_url || '',
+                    alt_text: modalData.alt_text || '',
+                    product_slug: modalData.product_slug || '',
+                    sort_order: Math.max(0, parseInt(modalData.sort_order ?? 0) || 0),
+                    is_active: modalData.is_active !== false,
+                  });
+                  showFlash(modalData.id ? 'Reel updated successfully' : 'Reel created successfully');
+                  setActiveModal(null);
+                  loadViewData();
+                } catch (err) {
+                  showFlash(err instanceof Error ? err.message : 'Failed to save reel', 'error');
+                }
+              }}
+              className="admin-form"
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <label>
+                  <span>Reel Title *</span>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Bilona Ghee Process"
+                    value={modalData.title || ''}
+                    onChange={(e) => setModalData({ ...modalData, title: e.target.value })}
+                  />
+                </label>
+
+                <label>
+                  <span>Video File</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="text"
+                      placeholder="/assets/uploads/... or upload"
+                      value={modalData.file_path || ''}
+                      onChange={(e) => setModalData({ ...modalData, file_path: e.target.value })}
+                      style={{ flex: 1 }}
+                    />
+                    <label
+                      className="admin-button admin-button--ghost"
+                      style={{ whiteSpace: 'nowrap', cursor: 'pointer', padding: '9px 12px' }}
+                    >
+                      <i className="ph ph-upload-simple"></i> Upload
+                      <input
+                        type="file"
+                        accept="video/*"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleUploadImage(file, (url) => {
+                              setModalData((prev: any) => ({ ...prev, file_path: url }));
+                            }, 'reels');
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </label>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <label>
+                    <span>Linked Product Slug</span>
+                    <input
+                      type="text"
+                      placeholder="e.g. gawdee-gir-cow-a2-ghee-500-ml"
+                      value={modalData.product_slug || ''}
+                      onChange={(e) => setModalData({ ...modalData, product_slug: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>Sort Order</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={modalData.sort_order ?? 0}
+                      onChange={(e) => setModalData({ ...modalData, sort_order: parseInt(e.target.value) || 0 })}
+                    />
+                  </label>
+                </div>
+
+                <label className="form-switch" style={{ padding: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={modalData.is_active !== false}
+                    onChange={(e) => setModalData({ ...modalData, is_active: e.target.checked })}
+                  />
+                  <span>Reel is visible in storefront</span>
+                </label>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                <button
+                  type="button"
+                  className="admin-button admin-button--ghost"
+                  onClick={() => setActiveModal(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="admin-button admin-button--primary"
+                  disabled={uploadingImage}
+                >
+                  <i className="ph ph-check"></i> {modalData.id ? 'Update Reel' : 'Create Reel'}
                 </button>
               </div>
             </form>

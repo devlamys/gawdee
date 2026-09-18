@@ -12,6 +12,7 @@ import {
   CatalogItem,
   CatalogVariant,
   CatalogVariantImage,
+  HeroSlideRow,
 } from '@/types';
 import { env } from '@/config/env';
 
@@ -87,6 +88,10 @@ export interface CreateOrderResponse {
 export const api = {
   // Storefront & Site config
   getStorefront: () => fetcher<StorefrontResponse>('/storefront', { next: { revalidate: 60 } }),
+
+  // Animated-hero 3D slides (Admin > Animated hero, public read)
+  getHeroSlides: () =>
+    fetcher<{ ok: boolean; slides: HeroSlideRow[] }>('/hero-slides', { next: { revalidate: 60 } }),
 
   // Products & Catalogue (backend is the source of truth — no local fallback data)
   getProducts: () => fetcher<{ ok: boolean; products: Product[] }>('/products', { next: { revalidate: 60 } }),

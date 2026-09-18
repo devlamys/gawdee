@@ -111,8 +111,28 @@ export interface CatalogItem {
   variants: CatalogVariant[];
 }
 
-export interface Review {
+/** Admin-managed Animated-hero 3D slide row (GET /api/hero-slides). */
+export interface HeroSlideRow {
   id: number;
+  title: string;
+  cat?: string;
+  title_html?: string;
+  word?: string;
+  sub?: string;
+  price_label?: string;
+  mrp_label?: string;
+  off_badge?: string;
+  reviews_label?: string;
+  product_image?: string;
+  cart_id?: string;
+  cart_name?: string;
+  cart_price?: number;
+  cart_image?: string;
+  sort_order?: number;
+  is_active?: number;
+}
+
+export interface Review {  id: number;
   product_id: string;
   rating: number;
   // Backend field names (GET /api/products/{slug} and POST /api/product-review)

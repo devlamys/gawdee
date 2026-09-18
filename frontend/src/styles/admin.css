@@ -579,6 +579,45 @@ img {
     font-size: .65rem
 }
 
+/* Section head used by Categories / Orders / Reels / Animated hero /
+   Homepage CMS / Settings views — same rhythm as .admin-card__header,
+   plus wrapping so the action button never collides with the title. */
+.admin-card__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 14px 20px;
+    padding: 18px 20px;
+    border-bottom: 1px solid #edf0ed
+}
+
+.admin-card__head h2 {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: .93rem;
+    letter-spacing: -.025em
+}
+
+.admin-card__head p {
+    margin: 4px 0 0;
+    color: #819087;
+    font-size: .65rem
+}
+
+.admin-card__head .admin-button {
+    flex-shrink: 0
+}
+
+/* Friendly empty state for tables with zero rows (e.g. no hero slides yet) */
+.admin-table__empty td {
+    text-align: center;
+    padding: 36px 20px;
+    color: #819087;
+    font-size: .75rem;
+    border-bottom: 0
+}
+
 .admin-card__body {
     padding: 20px
 }
@@ -1009,7 +1048,8 @@ img {
         grid-template-columns: 1fr
     }
 
-    .admin-card__header {
+    .admin-card__header,
+    .admin-card__head {
         align-items: flex-start;
         flex-direction: column
     }

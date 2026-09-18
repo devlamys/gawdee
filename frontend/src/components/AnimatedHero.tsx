@@ -5,9 +5,9 @@ import Link from 'next/link';
 import gsap from 'gsap';
 import { useCart } from '@/context/CartContext';
 import { api } from '@/lib/api';
-import { money } from '@/lib/utils';
-import type { CartItem, CatalogItem, CatalogVariant } from '@/types';
-import { firstValidVariant, variantCartLine, variantDiscountPercent } from '@/lib/catalog';
+import { money, resolveImageUrl } from '@/lib/utils';
+import type { CartItem, CatalogItem, CatalogVariant, HeroSlideRow } from '@/types';
+import { firstValidVariant, itemCardImage, variantCartLine, variantDetailGallery, variantDiscountPercent } from '@/lib/catalog';
 
 interface SlideConfig {
   cat: string;
@@ -28,8 +28,114 @@ interface HeroSlide extends SlideConfig {
   off: string;
   reviews: string;
   cartPrice: number;
-  cartLine: Omit<CartItem, 'quantity'>;
+  cartLine: Omit<CartItem, 'quantity'> | null;
   inStock: boolean;
+}
+
+/** Escape dynamic catalog text embedded into slide title HTML. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/** Merge live backend variant data (price/stock/cart) into slide creative. */
+function mergeLive(
+  base: SlideConfig,
+  item: CatalogItem,
+  variant: CatalogVariant,
+  overrides: { priceLabel?: string; mrpLabel?: string; off?: string; reviews?: string } = {}
+): HeroSlide {
+  const price = Number(variant.sellingPrice) || 0;
+  const mrp = Number(variant.mrp) || price;
+  const offPct = variantDiscountPercent(variant);
+  const rating = Number(item.rating) || 0;
+  const reviewCount = Number(item.reviewCount) || 0;
+  const line = variantCartLine(item, variant);
+  return {
+    ...base,
+    cartImage: line.image || base.cartImage,
+    cartName: line.name,
+    url: item.slug ? `/products/${item.slug}` : base.url,
+    priceLabel: overrides.priceLabel || money(price),
+    mrpLabel: overrides.mrpLabel || money(mrp),
+    off: overrides.off || (offPct > 0 ? `Save ${offPct}%` : ''),
+    reviews:
+      overrides.reviews ||
+      (rating > 0 ? `${rating.toFixed(1)} — ${reviewCount} review${reviewCount === 1 ? '' : 's'}` : ''),
+    cartId: line.id,
+    cartPrice: price,
+    cartLine: line,
+    inStock: variant.stock > 0,
+  };
+}
+
+/** Map one admin-managed slide row to a hero slide (live data wins when the cart_id resolves). */
+function dbRowToSlide(
+  row: HeroSlideRow,
+  map: Record<string, { item: CatalogItem; variant: CatalogVariant }>
+): HeroSlide | null {
+  const key = (row.cart_id || '').trim();
+  const found = (key && (map[key] ?? map[String(key)])) || null;
+  const item = found?.item ?? null;
+  const variant = found?.variant ?? null;
+  const name = item?.name || row.cart_name || row.title || 'Featured product';
+  const img =
+    resolveImageUrl(row.product_image || '', '') ||
+    (variant ? variantDetailGallery(variant)[0] || '' : '') ||
+    (item ? itemCardImage(item) : '') ||
+    resolveImageUrl(row.cart_image || '', '');
+  if (!img) return null;
+  const price = variant ? Number(variant.sellingPrice) || 0 : Number(row.cart_price) || 0;
+  const mrp = variant ? Number(variant.mrp) || price : price;
+  const line = item && variant ? variantCartLine(item, variant) : null;
+  return {
+    cat: row.cat || item?.category || 'Featured • Gawdee',
+    title: (row.title_html || row.title || escapeHtml(name)).trim() || escapeHtml(name),
+    word: (row.word || name.split(/\s+/)[0] || 'GAWDEE').toUpperCase(),
+    sub: row.sub || item?.description || '',
+    img,
+    alt: name,
+    url: (item?.slug ? `/products/${item.slug}` : key ? `/products/${key}` : '/products'),
+    cartId: `db-${row.id}`,
+    cartName: row.cart_name || line?.name || name,
+    cartImage: line?.image || resolveImageUrl(row.cart_image || '', '') || img,
+    priceLabel: row.price_label || (price ? money(price) : ''),
+    mrpLabel: row.mrp_label || (mrp ? money(mrp) : ''),
+    off: row.off_badge || '',
+    reviews: row.reviews_label || '',
+    cartPrice: price,
+    cartLine: line,
+    inStock: variant ? variant.stock > 0 : false,
+  };
+}
+
+/** Build a slide from whatever the catalog actually has (last-resort fallback). */
+function catalogSlide(item: CatalogItem): HeroSlide | null {
+  const variant = firstValidVariant(item);
+  if (!variant) return null;
+  const img = variantDetailGallery(variant)[0] || itemCardImage(item);
+  if (!img) return null;
+  const name = item.name || 'Featured product';
+  const vName = variant.variantName || '';
+  return mergeLive(
+    {
+      cat: item.category || 'Featured • Gawdee',
+      title: `${escapeHtml(name)}${vName ? `<br><span>${escapeHtml(vName)}</span>` : ''}`,
+      word: (name.split(/\s+/)[0] || 'GAWDEE').toUpperCase(),
+      sub: (item.description || '').slice(0, 160),
+      img,
+      alt: name,
+      url: item.slug ? `/products/${item.slug}` : '/products',
+      cartId: String(variant.id),
+      cartName: name,
+      cartImage: img,
+    },
+    item,
+    variant
+  );
 }
 
 // Static creative (copy/artwork) only — every price, discount, rating and
@@ -119,6 +225,8 @@ export const AnimatedHero: React.FC = () => {
   // Canonical items keyed by every variant slug + item slug, so static hero
   // configs always resolve to real backend variants (never stale/fake data).
   const [variantBySlug, setVariantBySlug] = useState<Record<string, { item: CatalogItem; variant: CatalogVariant }>>({});
+  // Admin-managed slides (Admin > Animated hero) — win over static configs when present.
+  const [dbSlides, setDbSlides] = useState<HeroSlideRow[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -147,38 +255,54 @@ export const AnimatedHero: React.FC = () => {
     };
   }, []);
 
-  // Merge real backend variant data into each slide; drop slides whose
-  // product no longer exists in the backend (never show stale/fake data).
+  useEffect(() => {
+    let cancelled = false;
+    api.getHeroSlides()
+      .then((res) => {
+        if (cancelled) return;
+        if (res?.ok && Array.isArray(res.slides)) {
+          setDbSlides(res.slides);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Slide sources, in priority order:
+  // 1. Admin-managed slides (live variant data merged in when cart_id resolves).
+  // 2. Curated static configs merged with live backend data.
+  // 3. Dynamic slides built from whatever the catalog actually has —
+  //    the hero never renders empty while products exist.
   const slides: HeroSlide[] = useMemo(() => {
+    if (dbSlides.length > 0) {
+      const out: HeroSlide[] = [];
+      for (const row of dbSlides) {
+        const s = dbRowToSlide(row, variantBySlug);
+        if (s) out.push(s);
+      }
+      if (out.length > 0) return out;
+    }
     const out: HeroSlide[] = [];
     for (const cfg of SLIDE_CONFIGS) {
       const slug = cfg.url.split('/products/')[1] || '';
       const found = variantBySlug[slug] ?? variantBySlug[cfg.cartId];
       if (!found) continue;
-      const { item, variant: backend } = found;
-      const price = Number(backend.sellingPrice) || 0;
-      const mrp = Number(backend.mrp) || price;
-      const offPct = variantDiscountPercent(backend);
-      const rating = Number(item.rating) || 0;
-      const reviewCount = Number(item.reviewCount) || 0;
-      const line: Omit<CartItem, 'quantity'> = variantCartLine(item, backend);
-      out.push({
-        ...cfg,
-        cartImage: line.image || cfg.cartImage,
-        cartName: line.name,
-        url: item.slug ? `/products/${item.slug}` : cfg.url,
-        priceLabel: money(price),
-        mrpLabel: money(mrp),
-        off: offPct > 0 ? `Save ${offPct}%` : '',
-        reviews: rating > 0 ? `${rating.toFixed(1)} — ${reviewCount} review${reviewCount === 1 ? '' : 's'}` : '',
-        cartId: line.id,
-        cartPrice: price,
-        cartLine: line,
-        inStock: backend.stock > 0,
-      });
+      out.push(mergeLive(cfg, found.item, found.variant));
+    }
+    if (out.length > 0) return out;
+    const seen = new Set<string>();
+    for (const key of Object.keys(variantBySlug)) {
+      const entry = variantBySlug[key];
+      if (!entry?.item || seen.has(String(entry.item.id))) continue;
+      seen.add(String(entry.item.id));
+      const s = catalogSlide(entry.item);
+      if (s) out.push(s);
+      if (out.length >= 5) break;
     }
     return out;
-  }, [variantBySlug]);
+  }, [variantBySlug, dbSlides]);
 
   const heroRef = useRef<HTMLElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);

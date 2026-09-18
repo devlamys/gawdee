@@ -335,6 +335,17 @@ async def storefront_settings(db: aiosqlite.Connection = Depends(db_dep)):
     }
 
 
+# ── GET /api/hero-slides ────────────────────────────────────────────────────
+# Active Animated-hero 3D carousel slides (managed in Admin > Animated hero).
+# All columns are display-safe: labels, image paths, cart id/name/price.
+
+@router.get("/hero-slides")
+async def hero_slides(db: aiosqlite.Connection = Depends(db_dep)):
+    async with db.execute("SELECT * FROM hero_banners_two WHERE is_active=1 ORDER BY sort_order, id") as cur:
+        rows = await cur.fetchall()
+    return {"ok": True, "slides": [dict(r) for r in rows]}
+
+
 # ── GET /api/testimonials ─────────────────────────────────────────────────────
 
 @router.get("/testimonials")
