@@ -41,7 +41,7 @@ export function NhpWhyGawdee() {
     <section className="nhp-why" id="heritage" aria-label="Why choose Gawdee ghee">
       <div className="nhp-why__inner">
         <p className="nhp-why__eyebrow">The Gawdee Standard</p>
-        <h2 className="nhp-why__title">Why Choose GAWDEE Ghee?</h2>
+        <h2 className="nhp-why__title">Why Choose GAWDEE!</h2>
         <p className="nhp-why__sub">Pure by tradition. Better for today.</p>
 
         <div className="nhp-why__grid">

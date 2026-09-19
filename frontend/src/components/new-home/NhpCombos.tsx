@@ -79,14 +79,13 @@ function NhpComboCard({ combo }: { combo: ComboData }) {
               <strong>₹{combo.sellingPrice.toLocaleString()}</strong>
               <s>₹{combo.mrp.toLocaleString()}</s>
             </div>
-            <p className="nhp-combo__tag">{combo.tagline}</p>
           </div>
           <button
             type="button"
             className="nhp-combo__add"
             data-add-to-cart
           >
-            ADD BUNDLE
+            <i className="ph ph-shopping-cart-simple" aria-hidden="true"></i> ADD
           </button>
         </div>
       </div>

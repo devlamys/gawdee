@@ -89,12 +89,26 @@
 }
 
 .nhp-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  display: flex;
   gap: 20px;
+  overflow-x: auto;
+  padding-bottom: 24px;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  overscroll-behavior-x: contain;
+}
+
+.nhp-grid::-webkit-scrollbar {
+  display: none;
 }
 
 .nhp-card {
+  flex: 0 0 calc(25% - 15px);
+  min-width: 280px;
+  scroll-snap-align: start;
+  scroll-snap-stop: normal;
   display: flex;
   flex-direction: column;
   background: #ffffff;
@@ -189,7 +203,7 @@
 .nhp-card__body {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   padding: 14px 15px 16px;
   flex: 1;
 }
@@ -198,14 +212,14 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 0.82rem;
+  font-size: 0.9rem;
   font-weight: 700;
   color: #1d5c45;
 }
 
 .nhp-card__rating i {
   color: #fbb825;
-  font-size: 0.95rem;
+  font-size: 1.05rem;
 }
 
 .nhp-card__rating small {
@@ -215,11 +229,12 @@
 
 .nhp-card__title {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 1.05rem;
   font-family: 'Roboto Slab', Georgia, serif;
   font-weight: 700;
   line-height: 1.4;
   color: #008865;
+  text-transform: uppercase;
 }
 
 .nhp-card__title a {
@@ -233,7 +248,7 @@
 
 .nhp-card__pack {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: 0.85rem;
   font-weight: 600;
   color: #008865;
 }
@@ -247,19 +262,19 @@
 }
 
 .nhp-card__price strong {
-  font-size: 1.15rem;
+  font-size: 1.25rem;
   font-weight: 800;
   color: #008865;
 }
 
 .nhp-card__price s {
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   color: #9aa8a0;
 }
 
 .nhp-card__save {
   margin: 0;
-  font-size: 0.7rem;
+  font-size: 0.78rem;
   font-weight: 700;
   color: #008865;
 }
@@ -276,7 +291,7 @@
   border-radius: 999px;
   background: #009a84;
   color: #ffffff;
-  font-size: 0.86rem;
+  font-size: 0.95rem;
   font-weight: 800;
   letter-spacing: 0.03em;
   cursor: pointer;
@@ -356,7 +371,7 @@
 
 @media (max-width: 1024px) {
   .nhp-grid {
-    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
   }
 }
 
@@ -372,6 +387,14 @@
     margin: 0 -24px 24px;
     padding: 4px 24px 8px;
     scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+    overscroll-behavior-x: contain;
+  }
+  
+  .nhp-tabs::-webkit-scrollbar {
+    display: none;
   }
 
   .nhp-tab {
@@ -386,11 +409,22 @@
     padding: 4px 24px 12px;
     overflow-x: auto;
     scroll-snap-type: x mandatory;
+    scrollbar-width: none; /* Firefox */
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+    overscroll-behavior-x: contain;
+  }
+  
+  .nhp-grid::-webkit-scrollbar {
+    display: none; /* Safari and Chrome */
   }
 
   .nhp-card {
-    flex: 0 0 240px;
+    flex: 0 0 calc(50% - 19px); /* ~2 cards per screen minus gap/padding */
+    max-width: calc(50% - 19px);
+    min-width: calc(50% - 19px);
     scroll-snap-align: start;
+    scroll-snap-stop: normal;
   }
 }
 
@@ -1422,12 +1456,25 @@
 }
 
 .nhp-combos__grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  display: flex;
   gap: 24px;
+  overflow-x: auto;
+  padding-bottom: 24px;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  overscroll-behavior-x: contain;
+}
+.nhp-combos__grid::-webkit-scrollbar {
+  display: none;
 }
 
 .nhp-combo {
+  flex: 0 0 calc(25% - 18px);
+  min-width: 280px;
+  scroll-snap-align: start;
+  scroll-snap-stop: normal;
   display: flex;
   flex-direction: column;
   background: #ffffff;
@@ -1481,7 +1528,7 @@
 
 .nhp-combo__category {
   margin: 0;
-  font-size: 0.65rem;
+  font-size: 0.75rem;
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -1491,10 +1538,11 @@
 .nhp-combo__title {
   margin: 0;
   font-family: 'Roboto Slab', Georgia, serif;
-  font-size: 1.15rem;
+  font-size: 1.25rem;
   font-weight: 800;
   line-height: 1.35;
   color: #008865;
+  text-transform: uppercase;
 }
 
 .nhp-combo__title a {
@@ -1508,7 +1556,7 @@
 
 .nhp-combo__desc {
   margin: 0 0 16px;
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   line-height: 1.5;
   color: #7a8a80;
 }
@@ -1534,34 +1582,27 @@
 }
 
 .nhp-combo__price strong {
-  font-size: 1.3rem;
+  font-size: 1.6rem;
   font-weight: 800;
   color: #008865;
 }
 
 .nhp-combo__price s {
-  font-size: 0.85rem;
+  font-size: 1.05rem;
   color: #b9c6bd;
 }
-
-.nhp-combo__tag {
-  margin: 0;
-  font-size: 0.65rem;
-  font-weight: 700;
-  color: #008865;
-}
-
 .nhp-combo__add {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 36px;
+  gap: 6px;
+  min-height: 38px;
   padding: 0 20px;
   border: 0;
   border-radius: 999px;
   background: #008865;
   color: #ffffff;
-  font-size: 0.72rem;
+  font-size: 0.95rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   cursor: pointer;
@@ -1590,7 +1631,7 @@
 
 @media (max-width: 900px) {
   .nhp-combos__grid {
-    grid-template-columns: 1fr 1fr;
+    gap: 16px;
   }
 }
 
@@ -1605,7 +1646,15 @@
   }
 
   .nhp-combos__grid {
-    grid-template-columns: 1fr;
+    gap: 14px;
+    margin: 0 -24px;
+    padding: 4px 24px 12px;
+  }
+  
+  .nhp-combo {
+    flex: 0 0 calc(50% - 19px);
+    max-width: calc(50% - 19px);
+    min-width: calc(50% - 19px);
   }
 
   .nhp-certs__list {
@@ -1668,13 +1717,13 @@
   display: flex;
   margin-bottom: 12px;
   color: #008865;
-  font-size: 1.25rem;
+  font-size: 2.25rem;
 }
 
 .nhp-quality__card h3 {
   margin: 0 0 8px;
   font-family: 'Roboto Slab', Georgia, serif;
-  font-size: 0.95rem;
+  font-size: 1.15rem;
   font-weight: 800;
   color: #008865;
   line-height: 1.3;
@@ -1682,7 +1731,7 @@
 
 .nhp-quality__card p {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: 0.9rem;
   line-height: 1.5;
   color: #7a8a80;
 }
