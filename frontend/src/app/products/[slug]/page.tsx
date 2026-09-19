@@ -1,4 +1,5 @@
 'use client';
+import '@/styles/new-pdp.css';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -67,6 +68,23 @@ export default function ProductDetailPage() {
   const [quantity, setQuantity] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [purchaseType, setPurchaseType] = useState('subscribe');
+  const [deliveryFreq, setDeliveryFreq] = useState('1 month');
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
 
   const mainCtaRef = useRef<HTMLDivElement>(null);
 
@@ -186,7 +204,10 @@ export default function ProductDetailPage() {
 
 
   if (loading) {
-    return (
+  
+
+
+  return (
       <div style={{ textAlign: 'center', padding: '6rem 0', color: '#888' }}>
         <i className="ph ph-spinner ph-spin" style={{ fontSize: '2.5rem', color: '#009a84' }}></i>
         <p style={{ marginTop: '0.8rem' }}>Loading product details…</p>
@@ -195,7 +216,10 @@ export default function ProductDetailPage() {
   }
 
   if (error || !item || !selected) {
-    return (
+  
+
+
+  return (
       <div style={{ textAlign: 'center', padding: '6rem 0' }}>
         <h2>Product not found</h2>
         <p style={{ color: '#666', marginTop: '0.5rem' }}>{error || 'The product you are looking for might be unavailable.'}</p>
@@ -274,327 +298,218 @@ export default function ProductDetailPage() {
     }
   };
 
+
+
+
   return (
     <div className="product-page product-page--reference ref-product-page" style={{ padding: '6rem 0 5rem' }}>
-      <div className="container ref-product-container">
-        {/* Product Hero Grid */}
-        <section className="ref-product-hero pdp-hero-grid" aria-labelledby="product-title">
-          {/* Gallery — images belong to the selected variant; cleared on switch */}
-          <div className="ref-gallery">
-            <div className="ref-gallery__thumbs" aria-label="Product images">
-              {galleryImages.map((imgSrc, idx) => (
+      <div className="container pv-container">
+        <section className="pv-hero-grid">
+          {/* Left: Gallery (Interactive) */}
+          <div className="pv-gallery">
+            <div className="pv-gallery__main">
+              <span className="pv-gallery__badge">Delicious<br/>Daily<br/>Nutrition</span>
+              <img
+                src={mainImage ? resolveImageUrl(mainImage) : '/assets/images/temp-products/WhatsApp Image 2026-09-15 at 6.45.50 PM.jpeg'}
+                alt={displayTitle}
+                style={{ objectFit: 'contain' }}
+                onError={() => setImgBroken(true)}
+              />
+            </div>
+            <div className="pv-gallery__thumbs">
+              {(galleryImages.length > 0 ? galleryImages : ['/assets/images/temp-products/WhatsApp Image 2026-09-15 at 6.45.50 PM.jpeg', '/assets/images/temp-products/WhatsApp Image 2026-09-15 at 6.45.50 PM3.jpeg', '/assets/images/temp-products/WhatsApp Image 2026-09-15 at 6.45.50 PM23.jpeg', '/assets/images/temp-products/WhatsApp Image 2026-09-15 at 6.45.51 PM.jpeg']).map((imgSrc, idx) => (
                 <button
                   key={idx}
                   type="button"
-                  className={`ref-gallery__thumb ${activeImage === imgSrc ? 'is-active' : ''}`}
+                  className={`pv-gallery__thumb ${(activeImage || galleryImages[0] || '/assets/images/temp-products/WhatsApp Image 2026-09-15 at 6.45.50 PM.jpeg') === imgSrc ? 'is-active' : ''}`}
                   onClick={() => {
                     setActiveImage(imgSrc);
                     setImgBroken(false);
                   }}
-                  aria-label={`Show ${displayTitle} — image ${idx + 1}`}
-                  aria-pressed={activeImage === imgSrc}
                 >
-                  <img
-                    src={resolveImageUrl(imgSrc)}
-                    alt=""
-                    loading="lazy"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLElement).style.display = 'none';
-                    }}
-                  />
+                  <img src={resolveImageUrl(imgSrc)} alt="" />
                 </button>
               ))}
             </div>
-            <div className="ref-gallery__stage" style={{ ['--product-accent' as any]: item.accent || '#009a84' }}>
-              <span className="ref-gallery__badge">{item.tag || 'Popular'}</span>              <button
-                type="button"
-                onClick={() => toggleWishlist(String(selected.id))}
-                style={{
-                  position: 'absolute',
-                  top: '1rem',
-                  right: '1rem',
-                  background: '#fff',
-                  border: '1px solid #ddd',
-                  borderRadius: '50%',
-                  width: '40px',
-                  height: '40px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  zIndex: 2,
-                }}
-                aria-label="Wishlist toggle"
-              >
-                <i className={`ph ${wishlisted ? 'ph-fill ph-heart' : 'ph-heart'}`} style={{ color: wishlisted ? '#e03131' : '#555', fontSize: '1.2rem' }}></i>
-              </button>
-              {mainImage ? (
-                <img
-                  src={resolveImageUrl(mainImage)}
-                  alt={displayTitle}
-                  data-product-main-image
-                  onError={() => setImgBroken(true)}
-                />
-              ) : (
-                <div
-                  className="ref-gallery__empty"
-                  role="img"
-                  aria-label={`No photos yet for ${displayTitle}`}
-                  style={{
-                    width: '100%',
-                    minHeight: '320px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '0.6rem',
-                    color: '#8a978f',
-                    background: 'radial-gradient(circle at 30% 25%, rgba(31,77,58,0.07), transparent 55%), #faf7f2',
-                  }}
-                >
-                  <i className="ph ph-image" style={{ fontSize: '3rem' }} aria-hidden="true"></i>
-                  <span style={{ fontSize: '0.9rem' }}>Photos coming soon</span>
-                </div>
-              )}
-            </div>
           </div>
 
-          {/* Buybox */}
-          <div className="ref-buybox">
-            <h1 id="product-title" data-variant-title>
-              {displayTitle}{' '}
-              <i className="ph-fill ph-seal-check" aria-label="Verified product"></i>
-            </h1>
-
-            <div className="ref-buybox__header-row">
-              <a className="ref-rating" href="#reviews">
-                <span aria-hidden="true">★★★★★</span>
-                {Number(item.rating) > 0 ? (
-                  <>
-                    <strong>{Number(item.rating).toFixed(1)}</strong>
-                    <small>({reviews.length} review{reviews.length === 1 ? '' : 's'})</small>
-                  </>
-                ) : (
-                  <>
-                    <strong>New</strong>
-                    <small>({reviews.length === 0 ? 'No reviews yet' : `${reviews.length} review${reviews.length === 1 ? '' : 's'}`})</small>
-                  </>
-                )}
-              </a>
-
-              <div className="ref-buybox__price-block">
-                <div className="ref-price">
-                  <strong data-variant-price>{money(selected.sellingPrice)}</strong>
-                  {selected.mrp > selected.sellingPrice && (
-                    <s data-variant-original-price>{money(selected.mrp)}</s>
-                  )}
-                  {discount > 0 && (
-                    <span data-variant-discount>{discount}% OFF</span>
-                  )}
-                </div>
-                <small className="ref-tax" data-variant-tax>
-                  {selected.isInclusive ? 'Inclusive of all taxes' : 'Exclusive of taxes'}
-                </small>
-              </div>
+          {/* Right: Details (Interactive) */}
+          <div className="pv-details">
+            <div className="pv-social-proof">
+              <span className="pv-stars">★★★★★</span>
+              <span className="pv-reviews-count">{reviews.length > 0 ? `4.8 (${reviews.length}+ Reviews)` : '2,842+ Reviews'}</span>
             </div>
 
-            {discount > 0 && selected.mrp > selected.sellingPrice && (
-              <div className="ref-promo-badges">
-                <div className="ref-badge-best-price">
-                  <strong>Save {discount}%</strong>{' '}
-                  <span className="ref-badge-best-price-code">vs MRP</span>
-                </div>
-              </div>
-            )}
+            <h1 className="pv-title">{displayTitle || 'MULTIVITAMIN GUMMIES\nFOR ADULTS'}</h1>
 
-            {item.variants.length > 0 && (
-              <>
-                <div className="ref-variants-title">Select Variant</div>
-                <div className="ref-variants">
-                  <div className="ref-variants-grid">
-                    {item.variants.map((v) => {
-                      const isCurrent = v.id === selected.id;
-                      const vDiscount = variantDiscountPercent(v);
-                      const unitPrice = calculateUnitPrice(v.sellingPrice, v.variantName);
-                      const vAvailable = isVariantAvailable(v);
-                      return (
-                        <button
-                          key={v.id}
-                          type="button"
-                          className={`ref-variant-chip ${isCurrent ? 'is-active' : ''}`}
-                          onClick={() => selectVariant(v)}
-                          aria-label={`${v.variantName}, ${money(v.sellingPrice)}${vAvailable ? '' : ', sold out'}`}
-                        >
-                          <span className="ref-variant-weight">{v.variantName}{v.uom ? ` · ${v.uom}` : ''}</span>
-                          <span className="ref-variant-pricing">
-                            <span className="ref-variant-price">{money(v.sellingPrice)}</span>
-                            {v.mrp > v.sellingPrice && (
-                              <>
-                                <span className="ref-variant-mrp">{money(v.mrp)}</span>
-                                <span className="ref-variant-discount">{vDiscount}% off</span>
-                              </>
-                            )}
-                          </span>
-                          {unitPrice && (
-                            <span className="ref-variant-unitprice">{unitPrice}</span>
-                          )}
-                        </button>
-                      );
-                    })}
+            <div className="pv-benefit-icons">
+              <div className="pv-bicon"><i className="ph ph-leaf"></i></div>
+              <div className="pv-bicon"><i className="ph ph-shield-check"></i></div>
+              <div className="pv-bicon"><i className="ph ph-cube"></i></div>
+              <div className="pv-bicon"><i className="ph ph-flask"></i></div>
+              <div className="pv-bicon"><i className="ph ph-prohibit"></i></div>
+            </div>
+
+            <div className="pv-price-row">
+              <strong className="pv-price">{money(purchaseType === 'subscribe' ? selected.sellingPrice * 0.85 : selected.sellingPrice)}</strong>
+              {selected.mrp > selected.sellingPrice && (
+                <s className="pv-price-strike">{money(selected.mrp)}</s>
+              )}
+              <span className="pv-price-badge">Save {discount > 0 ? discount : 25}%</span>
+            </div>
+
+            <div className="pv-pack-size">
+              <span className="pv-label">Choose Pack Size</span>
+              <div className="pv-dropdown-container" ref={dropdownRef} style={{ position: 'relative' }}>
+                <div 
+                  className="pv-dropdown-wrap" 
+                  onClick={() => setDropdownOpen(!dropdownOpen)}
+                >
+                  <span className="pv-dropdown-badge"><i className="ph-fill ph-star" style={{color: "#a47214", marginRight: 4, fontSize: "0.8rem"}}></i>Bestseller</span>
+                  <img src={mainImage ? resolveImageUrl(mainImage) : '/assets/images/temp-products/WhatsApp Image 2026-09-15 at 6.45.50 PM.jpeg'} style={{ width: 32, height: 32, objectFit: 'contain', background: '#fff', borderRadius: 4, border: '1px solid #eaeaea', padding: 2 }} alt="" />
+                  <div style={{ flex: 1, fontSize: '1.05rem', fontWeight: 600, color: '#111', userSelect: 'none' }}>
+                    {selected ? selected.variantName : '60 Gummies (1 Pack)'}
                   </div>
+                  <i className={`ph ph-caret-${dropdownOpen ? 'up' : 'down'} pv-dropdown-arrow`} style={{ transition: 'transform 0.2s' }}></i>
                 </div>
-              </>
-            )}
-
-            <div className="ref-buybox__description-wrap">
-              <strong className="ref-description-title">PRODUCT DESCRIPTION</strong>
-              <p className="ref-buybox__description">{item.description}</p>
-            </div>
-
-            <p className="ref-sku" style={{ fontSize: '0.72rem', marginTop: '-12px', marginBottom: '20px' }}>
-              SKU: <strong data-variant-sku>{selected.sku || '—'}</strong>
-              {selected.uom && (
-                <> · UOM: <strong data-variant-uom>{selected.uom}</strong></>
-              )}
-            </p>
-
-            <div className="ref-quantity-row">
-              <strong>Quantity</strong>
-              <div className="ref-quantity" aria-label="Quantity selector">
-                <button
-                  type="button"
-                  onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                  aria-label="Decrease quantity"
-                >
-                  <i className="ph ph-minus"></i>
-                </button>
-                <span aria-live="polite">{quantity}</span>
-                <button
-                  type="button"
-                  onClick={() => setQuantity(quantity + 1)}
-                  aria-label="Increase quantity"
-                >
-                  <i className="ph ph-plus"></i>
-                </button>
+                
+                {dropdownOpen && (
+                  <ul className="pv-custom-dropdown-menu">
+                    {item.variants.length > 0 ? item.variants.map((v) => (
+                      <li 
+                        key={v.id} 
+                        className={`pv-custom-dropdown-item ${selected && selected.id === v.id ? 'active' : ''}`}
+                        onClick={() => {
+                          selectVariant(v);
+                          setDropdownOpen(false);
+                        }}
+                      >
+                        {v.variantName}
+                      </li>
+                    )) : (
+                      <li className="pv-custom-dropdown-item active" onClick={() => setDropdownOpen(false)}>
+                        60 Gummies (1 Pack)
+                      </li>
+                    )}
+                  </ul>
+                )}
               </div>
-              <span className="ref-stock" data-variant-stock>
-                <i></i>
-                {available ? `In stock${validStock > 0 ? ` (${validStock} available)` : ''}` : 'Out of stock'}
-              </span>
             </div>
 
-            <div ref={mainCtaRef} className="ref-purchase-actions">
-              {available ? (
-                <>
-                  <button
-                    className="ref-add product-add"
-                    type="button"
-                    onClick={handleAddToCart}
-                  >
-                    Add to Cart <i className="ph ph-shopping-cart"></i>
-                  </button>
-                  <button
-                    className="ref-buy-now"
-                    type="button"
-                    onClick={handleBuyNow}
-                  >
-                    Buy Now
-                  </button>
-                </>
-              ) : (
-                <button
-                  className="ref-buy-now"
-                  type="button"
-                  onClick={handleNotifyMe}
-                  style={{ gridColumn: '1 / -1' }}
-                  aria-label={`Notify me when ${displayTitle} is back in stock`}
-                >
-                  Notify Me <i className="ph ph-bell-ringing"></i>
-                </button>
-              )}
+            <div className="pv-pack-size">
+              <span className="pv-label">Select Quantity:</span>
+              <div className="pv-qty-grid">
+                 {[1, 2, 3].map(q => {
+                   const coins = q === 1 ? 'Earn 125' : q === 2 ? 'Earn 310' : 'Earn 655';
+                   return (
+                     <button 
+                       key={q}
+                       type="button" 
+                       className={`pv-qty-btn ${quantity === q ? 'active' : ''}`}
+                       onClick={() => setQuantity(q)}
+                     >
+                       <span className="pv-coin-badge"><i className="ph-fill ph-coin" style={{marginRight: 3}}></i>{coins}</span>
+                       {q}-PACK
+                     </button>
+                   );
+                 })}
+              </div>
+            </div>
+
+            <div className="pv-purchase-options">
+              <span className="pv-label" style={{ marginBottom: 4 }}>Purchase Option:</span>
+              <div className="pv-po-box">
+                <label className="pv-po-radio" style={{ paddingBottom: '8px' }}>
+                   <input 
+                     type="radio" 
+                     name="purchase_type" 
+                     value="onetime" 
+                     checked={purchaseType === 'onetime'}
+                     onChange={() => setPurchaseType('onetime')}
+                   />
+                   <div className="pv-po-radio-content">
+                      <div className="pv-po-row">
+                        <span className="pv-po-label">One-time purchase</span>
+                      </div>
+                   </div>
+                </label>
+                
+                <hr className="pv-po-divider" />
+                
+                <label className="pv-po-radio">
+                   <input 
+                     type="radio" 
+                     name="purchase_type" 
+                     value="subscribe"
+                     checked={purchaseType === 'subscribe'}
+                     onChange={() => setPurchaseType('subscribe')}
+                   />
+                   <div className="pv-po-radio-content">
+                      <div className="pv-po-row">
+                        <span className="pv-po-label" style={{ fontWeight: 800 }}>Subscribe & Save 15%</span>
+                      </div>
+                      <div className="pv-po-sub" style={{ display: purchaseType === 'subscribe' ? 'block' : 'none' }}>
+                         <span className="pv-label" style={{ fontSize: '1rem', fontWeight: 500, color: '#333', marginBottom: 4 }}>Choose delivery frequency:</span>
+                         <div className="pv-po-freqs">
+                           <button 
+                             type="button" 
+                             className={deliveryFreq === '1 month' ? 'active' : ''}
+                             onClick={(e) => { e.preventDefault(); setDeliveryFreq('1 month'); }}
+                           >
+                             Every 1 month
+                           </button>
+                           <button 
+                             type="button" 
+                             className={deliveryFreq === '2 months' ? 'active' : ''}
+                             onClick={(e) => { e.preventDefault(); setDeliveryFreq('2 months'); }}
+                           >
+                             Every 2 months
+                           </button>
+                         </div>
+                      </div>
+                   </div>
+                </label>
+              </div>
+            </div>
+
+            <button 
+              className="pv-add-cart" 
+              type="button"
+              onClick={available ? handleBuyNow : handleNotifyMe}
+            >
+               {available ? 'ADD TO CART' : 'NOTIFY ME'}
+            </button>
+
+            <div style={{ marginTop: '32px', marginBottom: '32px' }}>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: 800, textTransform: 'uppercase', color: '#111', marginBottom: '12px' }}>
+                Product Description
+              </h3>
+              <p style={{ fontSize: '1.05rem', lineHeight: 1.6, color: '#555', whiteSpace: 'pre-line' }}>
+                {item.description || legacyInfo.description || 'Handcrafted using traditional methods to preserve authentic flavor and natural nutrition.'}
+              </p>
+            </div>
+
+            <div className="pv-trust-badges">
+               <div className="pv-tb">
+                 <i className="ph ph-truck"></i>
+                 <span>Free<br/>Worldwide Shipping</span>
+               </div>
+               <div className="pv-tb">
+                 <i className="ph ph-lock-key"></i>
+                 <span>Secure<br/>Checkout</span>
+               </div>
+               <div className="pv-tb">
+                 <i className="ph ph-clock-counter-clockwise"></i>
+                 <span>90 Day<br/>Money-Back Guarantee</span>
+               </div>
             </div>
           </div>
-        </section>
-
-        {/* Shopping Assurances Strip */}
-        <section className="ref-trust-strip" aria-label="Shopping assurances">
-          <article className="ref-trust-item ref-trust-item--delivery">
-            <img src="/assets/icons/product/free-delivery.webp" alt="Free Delivery" className="ref-trust-icon" width={48} height={48} loading="lazy" />
-            <span><strong>Free Delivery</strong>On orders above ₹999</span>
-          </article>
-          <article className="ref-trust-item ref-trust-item--secure">
-            <img src="/assets/icons/product/secure-payment.webp" alt="Secure Payment" className="ref-trust-icon" width={48} height={48} loading="lazy" />
-            <span><strong>Secure Payment</strong>100% safe &amp; trusted</span>
-          </article>
-          <article className="ref-trust-item ref-trust-item--returns">
-            <img src="/assets/icons/product/easy-returns.webp" alt="Easy Returns" className="ref-trust-icon" width={48} height={48} loading="lazy" />
-            <span><strong>Easy Returns</strong>Hassle-free returns</span>
-          </article>
-          <article className="ref-trust-item ref-trust-item--support">
-            <img src="/assets/icons/product/customer-support.webp" alt="Customer Support" className="ref-trust-icon" width={48} height={48} loading="lazy" />
-            <span><strong>Customer Support</strong>Mon – Sat (9AM – 7PM)</span>
-          </article>
-        </section>
-
-        {/* Purity Row & Story Card */}
-        <section className="ref-purity-row">
-          <div className="ref-purity-icons">
-            <article className="ref-purity-item ref-purity-item--organic">
-              <img src="/assets/icons/product/organic.webp" alt="100% Organic" className="ref-purity-icon" width={48} height={48} loading="lazy" />
-              <div>
-                <strong>100% Organic</strong>
-                <span>Pure &amp; Natural</span>
-              </div>
-            </article>
-            <article className="ref-purity-item ref-purity-item--chemicals">
-              <img src="/assets/icons/product/no-chemicals.webp" alt="No Chemicals" className="ref-purity-icon" width={48} height={48} loading="lazy" />
-              <div>
-                <strong>No Chemicals</strong>
-                <span>No Additives</span>
-              </div>
-            </article>
-            {selected.isLabTested && (
-              <article className="ref-purity-item ref-purity-item--lab">
-                <img src="/assets/icons/product/lab-tested.webp" alt="Lab Tested" className="ref-purity-icon" width={48} height={48} loading="lazy" />
-                <div>
-                  <strong>Lab Tested</strong>
-                  <span>For Purity</span>
-                </div>
-              </article>
-            )}
-            {selected.isNatural && (
-              <article className="ref-purity-item ref-purity-item--natural">
-                <i className="ph-fill ph-leaf" aria-hidden="true" style={{ fontSize: '48px', color: '#2e7d5b', width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}></i>
-                <div>
-                  <strong>100% Natural</strong>
-                  <span>Nothing Artificial</span>
-                </div>
-              </article>
-            )}
-            <article className="ref-purity-item ref-purity-item--quality">
-              <img src="/assets/icons/product/premium-quality.webp" alt="Premium Quality" className="ref-purity-icon" width={48} height={48} loading="lazy" />
-              <div>
-                <strong>Premium Quality</strong>
-                <span>Thoughtfully Made</span>
-              </div>
-            </article>
-          </div>
-          <article className="ref-story-card">
-            <picture className="ref-story-card__picture">
-              <source media="(max-width: 480px)" srcSet="/assets/images/story-mobile-portrait.webp" />
-              <source media="(max-width: 768px)" srcSet="/assets/images/story-mobile-square.webp" />
-              <img src="/assets/images/story-desktop.webp" alt="Rooted in Purity, Inspired by Nature - A2 Gir Cow Ghee" loading="lazy" className="ref-story-card__banner" />
-            </picture>
-          </article>
         </section>
 
         {/* Description, Benefits, Ingredients */}
         <div style={{ marginTop: '4rem', borderTop: '1px solid #eee', paddingTop: '3rem' }}>
           <div style={{ maxWidth: '800px' }}>
-            <h2 style={{ fontSize: '1.8rem', marginBottom: '1rem' }}>About this Product</h2>
-            <p style={{ fontSize: '1.05rem', lineHeight: 1.7, color: '#444', whiteSpace: 'pre-line' }}>
-              {item.description || legacyInfo.description || 'Handcrafted using traditional methods to preserve authentic flavor and natural nutrition.'}
-            </p>
+
 
             {legacyInfo.benefits && (
               <div style={{ marginTop: '2.5rem' }}>
@@ -640,22 +555,44 @@ export default function ProductDetailPage() {
               <p>No reviews yet. Be the first to share your experience!</p>
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '1.2rem' }}>
-              {reviews.map((r) => (
-                <div key={r.id} style={{ background: '#fff', border: '1px solid #eee', borderRadius: '12px', padding: '1.5rem' }}>
-                  <div style={{ display: 'flex', color: '#c19a3d', gap: '0.2rem', marginBottom: '0.5rem' }}>
-                    {[...Array(r.rating)].map((_, i) => (
-                      <i key={i} className="ph-fill ph-star"></i>
-                    ))}
+            <div className="pv-reviews-scroll">
+              {reviews.map((r) => {
+                const reviewText = r.review || r.body || '';
+                const truncatedText = reviewText.length > 358 ? reviewText.slice(0, 358) + '...' : reviewText;
+                
+                return (
+                  <div key={r.id} style={{ 
+                    background: '#fcfaf6', 
+                    border: '1px solid #f0eee5', 
+                    borderRadius: '16px', 
+                    padding: '1.5rem',
+                    minWidth: '340px',
+                    width: '340px',
+                    display: 'flex',
+                    flexDirection: 'column'
+                  }}>
+                    <div style={{ display: 'flex', color: '#f59e0b', gap: '0.1rem', marginBottom: '1rem' }}>
+                      {[...Array(r.rating || 5)].map((_, i) => (
+                        <i key={i} className="ph-fill ph-star" style={{ fontSize: '1rem' }}></i>
+                      ))}
+                    </div>
+                    
+                    <p style={{ fontSize: '0.95rem', color: '#555', fontStyle: 'italic', lineHeight: 1.6, flex: 1, margin: 0 }}>
+                      "{truncatedText}"
+                    </p>
+                    
+                    <div style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid #eae1d3', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                        <span style={{ fontWeight: 700, color: '#1e4027', fontSize: '0.95rem' }}>{r.name || r.author_name}</span>
+                        <span style={{ fontSize: '0.8rem', color: '#4a7556' }}>{item.name || displayTitle}{r.location ? ` • ${r.location}` : ''}</span>
+                      </div>
+                      <div style={{ background: '#dcfce7', color: '#166534', padding: '4px 10px', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                        Verified Buyer
+                      </div>
+                    </div>
                   </div>
-                  {(r.title) && <strong style={{ display: 'block', marginBottom: '0.4rem', color: '#111' }}>{r.title}</strong>}
-                  <p style={{ fontSize: '0.9rem', color: '#555', lineHeight: 1.5, margin: 0 }}>{r.review || r.body}</p>
-                  <div style={{ marginTop: '1rem', paddingTop: '0.6rem', borderTop: '1px solid #f5f5f5', display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#888' }}>
-                    <span>{r.name || r.author_name}</span>
-                    <span>{r.created_at || r.date ? new Date((r.created_at || r.date) as string).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}</span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
