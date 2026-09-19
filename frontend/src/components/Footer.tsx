@@ -76,40 +76,50 @@ export const Footer: React.FC<FooterProps> = ({ settings }) => {
           </div>
         </div>
 
-        <div className="commerce-footer__links">
-          <h2>Quick Links</h2>
-          <Link href="/products">Our Products</Link>
-          <Link href="/#offers">Special Offers</Link>
-          <Link href="/blog">Wellness Journal</Link>
-          <a href={`mailto:${storeEmail}`}>Contact Us</a>
-        </div>
+        <nav className="commerce-footer__nav" aria-label="Shop categories">
+          <h2>Shop Categories</h2>
+          <ul>
+            <li><Link href="/products?category=ghee">Vedic A2 Gir Cow Ghee</Link></li>
+            <li><Link href="/products?category=oils">Wood Pressed Oils</Link></li>
+            <li><Link href="/products?category=honey">Raw Forest Honey</Link></li>
+            <li><Link href="/products?category=jaggery">Organic Desi Khand & Jaggery</Link></li>
+            <li><Link href="/products?category=combos">Healthy Pantry Combos</Link></li>
+            <li><Link href="/products?category=flours">Stone Ground Flours</Link></li>
+          </ul>
+        </nav>
 
-        <div className="commerce-footer__links">
-          <h2>Customer Service</h2>
-          <a href="https://gawdee.com" target="_blank" rel="noopener">
-            Shipping Policy
-          </a>
-          <a href="https://gawdee.com" target="_blank" rel="noopener">
-            Return Policy
-          </a>
-          <a href="https://gawdee.com" target="_blank" rel="noopener">
-            Terms &amp; Conditions
-          </a>
-          <a href="https://gawdee.com" target="_blank" rel="noopener">
-            Privacy Policy
-          </a>
-          <a href="https://gawdee.com" target="_blank" rel="noopener">
-            FAQs
-          </a>
-        </div>
+        <nav className="commerce-footer__nav" aria-label="Policies and purity">
+          <h2>Policies & Purity</h2>
+          <ul>
+            <li><Link href="/lab-reports">Lab Reports & Transparency</Link></li>
+            <li><Link href="/shipping-policy">Shipping & Transit Policy</Link></li>
+            <li><Link href="/return-policy">Return & Refund Guarantee</Link></li>
+            <li><Link href="/terms">Terms of Service</Link></li>
+            <li><Link href="/privacy">Privacy Policy</Link></li>
+            <li><Link href="/fssai-compliance">FSSAI Compliance</Link></li>
+          </ul>
+        </nav>
 
-        <div className="commerce-footer__links">
-          <h2>Categories</h2>
-          <Link href="/products?category=ghee">Ghee</Link>
-          <Link href="/products?category=honey">Honey</Link>
-          <Link href="/products?category=wellness">Drops</Link>
-          <Link href="/products?category=nutrition">Mix Me</Link>
-          <Link href="/products?category=sugar">Sugar</Link>
+        <div className="commerce-footer__help" aria-label="Need help">
+          <h2>Need Help?</h2>
+          <p className="footer-help__hours">
+            Our wellness caretakers are available Monday &ndash; Saturday, 9 AM &ndash; 7 PM IST.
+          </p>
+          <address>
+            <a href="tel:+9118004197890" className="footer-help__phone">1800-419-7890</a>
+            <a href={`mailto:${storeEmail}`} className="footer-help__email">{storeEmail}</a>
+            <div className="footer-help__addresses">
+              <p>
+                <strong>Corporate Office:</strong> Sector 32, Gurugram, Haryana &ndash; 122001
+              </p>
+              <p>
+                <strong>Processing Center:</strong> Junagadh Agro Hub, Gujarat &ndash; 362001
+              </p>
+              <p>
+                <strong>CIN:</strong> U15400HR2023PTC109823
+              </p>
+            </div>
+          </address>
         </div>
 
         <div className="commerce-footer__signup">
@@ -135,7 +145,7 @@ export const Footer: React.FC<FooterProps> = ({ settings }) => {
       </div>
 
       <div className="container commerce-footer__bottom">
-        <p>© {new Date().getFullYear()} Gawdee. All rights reserved. Thoughtfully crafted in India.</p>
+        <p>&copy; {new Date().getFullYear()} GAWDEE Farm & Natural Technologies Pvt. Ltd. All rights reserved.</p>
         <div className="payment-pills">
           <span>VISA</span>
           <span>Mastercard</span>

@@ -2681,7 +2681,7 @@ em {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: 2fr repeat(3, 1fr) 2fr;
+  grid-template-columns: 1.5fr 1fr 1fr 1fr 1.5fr;
   gap: 44px;
   margin-bottom: 64px;
 }
@@ -2722,7 +2722,8 @@ em {
   transform: translateY(-2px);
 }
 
-.commerce-footer__links h2,
+.commerce-footer__nav h2,
+.commerce-footer__help h2,
 .commerce-footer__signup h2 {
   font-family: var(--font-sans);
   font-size: 1rem;
@@ -2732,14 +2733,50 @@ em {
   text-transform: uppercase;
   margin-bottom: 20px;
 }
-.commerce-footer__links a {
+
+.commerce-footer__nav ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.commerce-footer__nav li {
+  margin-bottom: 12px;
+}
+.commerce-footer__nav a {
   display: block;
   font-size: 0.92rem;
   color: var(--gawdee-muted);
-  margin-bottom: 12px;
 }
-.commerce-footer__links a:hover {
+.commerce-footer__nav a:hover {
   color: var(--gawdee-accent);
+}
+
+.commerce-footer__help p {
+  font-size: 0.92rem;
+  color: var(--gawdee-muted);
+  margin-bottom: 16px;
+  line-height: 1.6;
+}
+.commerce-footer__help address {
+  font-style: normal;
+}
+.commerce-footer__help a {
+  display: block;
+  font-size: 0.92rem;
+  color: var(--gawdee-muted);
+  margin-bottom: 8px;
+}
+.commerce-footer__help a:hover {
+  color: var(--gawdee-accent);
+}
+.commerce-footer__addresses p {
+  margin: 8px 0;
+  font-size: 0.85rem;
+  color: var(--gawdee-muted);
+  line-height: 1.6;
+}
+.commerce-footer__addresses strong {
+  color: var(--gawdee-primary-light);
 }
 
 .commerce-footer__signup p {
@@ -7626,6 +7663,9 @@ em {
   .commerce-footer__grid {
     grid-template-columns: repeat(2, 1fr);
   }
+  .commerce-footer__brand {
+    grid-column: 1 / -1;
+  }
   .customer-auth-shell {
     grid-template-columns: 1fr;
     min-height: auto;
@@ -9312,6 +9352,49 @@ em {
   .ref-review-cards {
     grid-template-columns: 1fr;
     gap: 12px;
+  }
+
+  .commerce-footer__grid {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+  .commerce-footer__brand {
+    grid-column: auto;
+    text-align: center;
+  }
+  .commerce-footer__brand img {
+    margin-inline: auto;
+  }
+  .commerce-footer__brand p {
+    max-width: none;
+  }
+  .commerce-socials {
+    justify-content: center;
+  }
+  .commerce-footer__nav h2,
+  .commerce-footer__help h2,
+  .commerce-footer__signup h2 {
+    text-align: center;
+  }
+  .commerce-footer__nav ul {
+    text-align: center;
+  }
+  .commerce-footer__nav a {
+    display: inline-block;
+  }
+  .commerce-footer__help {
+    text-align: center;
+  }
+  .commerce-footer__help address {
+    display: inline-block;
+    text-align: left;
+  }
+  .footer-mini-form {
+    justify-content: center;
+  }
+  .commerce-footer__bottom {
+    flex-direction: column;
+    text-align: center;
   }
 }
 

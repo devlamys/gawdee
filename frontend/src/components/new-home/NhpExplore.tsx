@@ -28,8 +28,7 @@ const TABS: ExploreTab[] = [
   { key: 'wellness', label: 'Wellness', icon: 'ph-leaf', keywords: ['wellness'] },
   { key: 'honey', label: 'Raw Honey', icon: 'ph-drop', keywords: ['honey'] },
   { key: 'combos', label: 'Combos', icon: 'ph-gift', keywords: ['combo', 'duo', 'bundle'] },
-  { key: 'best', label: 'Best Sellers', icon: 'ph-fire', keywords: ['best', 'top rated', 'bestseller'] },
-  { key: 'bulk', label: 'Bulk Family Savings', icon: 'ph-package', keywords: ['bulk', 'family'] },
+  { key: 'best', label: 'Best Sellers 🔥', icon: 'ph-fire', keywords: ['best', 'top rated', 'bestseller'] },
 ];
 
 function matchesTab(item: CatalogItem, tab: ExploreTab): boolean {
