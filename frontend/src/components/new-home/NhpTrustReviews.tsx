@@ -4,12 +4,12 @@ import { resolveImageUrl } from '@/lib/utils';
 
 const QUALITY_CARDS = [
   {
-    icon: 'ph-plant',
+    icon: 'ph-stars',
     title: 'Quality Ingredients',
     text: 'Carefully selected ingredients with a focus on purity and natural quality.',
   },
   {
-    icon: 'ph-cooking-pot',
+    icon: 'ph-hourglass',
     title: 'Traditional Processing',
     text: 'Traditional methods chosen to preserve the natural qualities of our ingredients.',
   },
@@ -19,7 +19,7 @@ const QUALITY_CARDS = [
     text: 'Carefully packed in food-safe packaging to protect freshness and quality.',
   },
   {
-    icon: 'ph-seal-check',
+    icon: 'ph-book-open',
     title: 'Product Transparency',
     text: 'Complete ingredient origins stamped clearly on every package.',
   },
@@ -76,7 +76,6 @@ function initialsOf(name: string, initials?: string): string {
 
 function ReviewCard({ testimonial, isExample }: { testimonial: Testimonial; isExample: boolean }) {
   const productLabel = testimonial.product_name || testimonial.product_title || '';
-  const productSlug = testimonial.product_slug || '';
   const filled = Math.max(1, Math.min(5, Math.round(Number(testimonial.rating) || 5)));
 
   return (
@@ -88,36 +87,22 @@ function ReviewCard({ testimonial, isExample }: { testimonial: Testimonial; isEx
         </span>
       </div>
       <blockquote className="nhp-review__quote">&ldquo;{testimonial.quote}&rdquo;</blockquote>
+      
+      <hr className="nhp-review__divider" />
+      
       <footer className="nhp-review__person">
-        {testimonial.avatar ? (
-          <img
-            className="nhp-review__avatar"
-            src={resolveImageUrl(testimonial.avatar)}
-            alt={testimonial.name}
-            loading="lazy"
-          />
-        ) : (
-          <span className="nhp-review__avatar nhp-review__avatar--initials" aria-hidden="true">
-            {initialsOf(testimonial.name, testimonial.initials)}
-          </span>
-        )}
-        <div>
+        <div className="nhp-review__person-info">
           <strong>{testimonial.name}</strong>
           <small>
             {productLabel}
             {testimonial.location ? ` • ${testimonial.location}` : ''}
           </small>
-          <span className="nhp-review__verified">
-            <i className="ph-fill ph-seal-check" aria-hidden="true"></i> Verified Buyer
-            {isExample && <em className="nhp-review__example">Example</em>}
-          </span>
+        </div>
+        <div className="nhp-review__verified-badge">
+          Verified Buyer
+          {isExample && <em className="nhp-review__example" style={{display: 'none'}}>Example</em>}
         </div>
       </footer>
-      {productSlug && (
-        <Link className="nhp-review__link" href={`/products/${productSlug}`}>
-          Read Full Story <i className="ph ph-arrow-right" aria-hidden="true"></i>
-        </Link>
-      )}
     </article>
   );
 }

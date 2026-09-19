@@ -69,7 +69,19 @@ function NhpProductCard({ item }: { item: CatalogItem }) {
   return (
     <article className="nhp-card" data-category={item.categoryKey || item.category?.toLowerCase()}>
       <Link className="nhp-card__media" href={`/products/${item.slug}`} aria-label={item.name}>
-        {badgeText && <span className="nhp-card__badge">{badgeText}</span>}
+        <div className="nhp-card__badges">
+          {badgeText && (
+            <span className={`nhp-card__badge ${badgeText.includes('OFF') || badgeText === 'Bulk Family Savings' && item.id === 4 ? 'nhp-card__badge--green' : 'nhp-card__badge--yellow'}`}>
+              {badgeText}
+            </span>
+          )}
+          {item.id === 1 && discount > 0 && (
+            <span className="nhp-card__badge nhp-card__badge--green">{discount}% OFF</span>
+          )}
+        </div>
+        <button type="button" className="nhp-card__wishlist" aria-label="Add to wishlist">
+          <i className="ph ph-heart"></i>
+        </button>
         {image ? (
           <img src={resolveImageUrl(image)} alt={item.name} loading="lazy" />
         ) : (
@@ -81,7 +93,13 @@ function NhpProductCard({ item }: { item: CatalogItem }) {
 
       <div className="nhp-card__body">
         <div className="nhp-card__rating">
-          <i className="ph-fill ph-star" aria-hidden="true"></i>
+          <div style={{ display: 'flex', gap: '2px' }}>
+            <i className="ph-fill ph-star" aria-hidden="true"></i>
+            <i className="ph-fill ph-star" aria-hidden="true"></i>
+            <i className="ph-fill ph-star" aria-hidden="true"></i>
+            <i className="ph-fill ph-star" aria-hidden="true"></i>
+            <i className="ph-fill ph-star" aria-hidden="true"></i>
+          </div>
           {rating > 0 ? (
             <>
               <span>{rating.toFixed(1)}</span>
@@ -96,53 +114,58 @@ function NhpProductCard({ item }: { item: CatalogItem }) {
           <Link href={`/products/${item.slug}`}>{item.name}</Link>
         </h3>
         <p className="nhp-card__pack">{selected.variantName}</p>
+        {item.description && <p className="nhp-card__desc" style={{ fontSize: '0.78rem', color: '#7a8a80', marginTop: '2px', margin: 0 }}>{item.description}</p>}
 
-        <div className="nhp-card__price">
-          <strong>{money(selected.sellingPrice)}</strong>
-          {selected.mrp > selected.sellingPrice && <s>{money(selected.mrp)}</s>}
-        </div>
-        {saved > 0 && (
-          <p className="nhp-card__save">
-            You Save {money(saved)}{discount > 0 && ` (${discount}%)`}
-          </p>
-        )}
+        <div className="nhp-card__bottom" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 'auto' }}>
+          <div className="nhp-card__price-wrap" style={{ display: 'flex', flexDirection: 'column' }}>
+            <div className="nhp-card__price">
+              <strong>{money(selected.sellingPrice)}</strong>
+              {selected.mrp > selected.sellingPrice && <s>{money(selected.mrp)}</s>}
+            </div>
+            {saved > 0 && (
+              <p className="nhp-card__save">
+                You Save {money(saved)}{discount > 0 && ` (${discount}%)`}
+              </p>
+            )}
+          </div>
 
-        {!available ? (
-          <button type="button" className="nhp-card__add" disabled>
-            Out of stock
-          </button>
-        ) : hasVariants ? (
-          <div className="nhp-card__variants" role="group" aria-label={`Choose a pack size for ${item.name}`}>
+          {!available ? (
+            <button type="button" className="nhp-card__add" disabled>
+              Out of stock
+            </button>
+          ) : hasVariants ? (
+            <div className="nhp-card__variants" role="group" aria-label={`Choose a pack size for ${item.name}`}>
+              <button
+                type="button"
+                className="nhp-card__add"
+                onClick={() => openVariantsDrawer(item, variants)}
+                aria-label={`Choose a pack size for ${item.name}`}
+              >
+                {selected.variantName} · {money(selected.sellingPrice)} <i className="ph ph-caret-down" aria-hidden="true"></i>
+              </button>
+            </div>
+          ) : cartQty > 0 ? (
+            <div className="nhp-stepper" aria-label={`Quantity of ${item.name} in bag`}>
+              <button type="button" onClick={() => updateQuantity(String(selected.id), -1)} aria-label={`Remove one ${item.name} from bag`}>
+                <i className="ph ph-minus" aria-hidden="true"></i>
+              </button>
+              <strong aria-live="polite">{cartQty}</strong>
+              <button type="button" onClick={() => updateQuantity(String(selected.id), 1)} aria-label={`Add one more ${item.name} to bag`}>
+                <i className="ph ph-plus" aria-hidden="true"></i>
+              </button>
+            </div>
+          ) : (
             <button
               type="button"
               className="nhp-card__add"
-              onClick={() => openVariantsDrawer(item, variants)}
-              aria-label={`Choose a pack size for ${item.name}`}
+              data-add-to-cart
+              onClick={handleAdd}
+              aria-label={`Add ${item.name} to bag`}
             >
-              {selected.variantName} · {money(selected.sellingPrice)} <i className="ph ph-caret-down" aria-hidden="true"></i>
+              <i className="ph ph-shopping-cart-simple" aria-hidden="true"></i> ADD
             </button>
-          </div>
-        ) : cartQty > 0 ? (
-          <div className="nhp-stepper" aria-label={`Quantity of ${item.name} in bag`}>
-            <button type="button" onClick={() => updateQuantity(String(selected.id), -1)} aria-label={`Remove one ${item.name} from bag`}>
-              <i className="ph ph-minus" aria-hidden="true"></i>
-            </button>
-            <strong aria-live="polite">{cartQty}</strong>
-            <button type="button" onClick={() => updateQuantity(String(selected.id), 1)} aria-label={`Add one more ${item.name} to bag`}>
-              <i className="ph ph-plus" aria-hidden="true"></i>
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            className="nhp-card__add"
-            data-add-to-cart
-            onClick={handleAdd}
-            aria-label={`Add ${item.name} to bag`}
-          >
-            <i className="ph ph-shopping-bag" aria-hidden="true"></i> ADD
-          </button>
-        )}
+          )}
+        </div>
       </div>
     </article>
   );
@@ -169,11 +192,13 @@ export function NhpExplore({ items }: { items: CatalogItem[] }) {
               type="button"
               role="tab"
               aria-selected={activeTab === tab.key}
-              className={`nhp-tab${activeTab === tab.key ? ' is-active' : ''}`}
+              className={`nhp-tab${activeTab === tab.key ? ' is-active' : ''} ${tab.key === 'best' ? 'is-highlight' : ''}`}
               onClick={() => setActiveTab(tab.key)}
             >
-              <i className={`ph ${tab.icon}`} aria-hidden="true"></i>
-              {tab.label}
+              <span className="nhp-tab-icon">
+                <i className={`ph ${tab.icon}`} aria-hidden="true"></i>
+              </span>
+              <span className="nhp-tab-label">{tab.label}</span>
             </button>
           ))}
         </div>

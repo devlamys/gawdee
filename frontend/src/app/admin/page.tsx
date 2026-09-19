@@ -1290,6 +1290,54 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                     Safe to toggle anytime.
                   </p>
                 </div>
+                <div
+                  style={{
+                    marginBottom: '16px',
+                    border: '1px solid var(--line, #e2e8e4)',
+                    borderLeft: '4px solid #009a84',
+                    borderRadius: '12px',
+                    padding: '12px 14px',
+                    background: 'var(--surface, #f6faf7)',
+                  }}
+                >
+                  <label className="form-switch" style={{ padding: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={settings.show_homepage_heading !== '0'}
+                      onChange={(e) =>
+                        setSettings({ ...settings, show_homepage_heading: e.target.checked ? '1' : '0' })
+                      }
+                    />
+                    <span><strong>Show Homepage Heading</strong></span>
+                  </label>
+                  <p style={{ margin: '8px 0 0', fontSize: '0.8rem', opacity: 0.75 }}>
+                    Toggle visibility of the homepage heading on NewHomePage.
+                  </p>
+                </div>
+                <div
+                  style={{
+                    marginBottom: '16px',
+                    border: '1px solid var(--line, #e2e8e4)',
+                    borderLeft: '4px solid #009a84',
+                    borderRadius: '12px',
+                    padding: '12px 14px',
+                    background: 'var(--surface, #f6faf7)',
+                  }}
+                >
+                  <label className="form-switch" style={{ padding: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={settings.show_footer_heading !== '0'}
+                      onChange={(e) =>
+                        setSettings({ ...settings, show_footer_heading: e.target.checked ? '1' : '0' })
+                      }
+                    />
+                    <span><strong>Show Footer Heading</strong></span>
+                  </label>
+                  <p style={{ margin: '8px 0 0', fontSize: '0.8rem', opacity: 0.75 }}>
+                    Toggle visibility of the footer headings.
+                  </p>
+                </div>
                 <label>
                   <span>Brand Name</span>
                   <input

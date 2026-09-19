@@ -119,63 +119,76 @@ export function NhpShopByNeed({ items }: { items: CatalogItem[] }) {
                         aria-label={opt.name}
                         title={opt.name}
                       >
-                        {thumb ? (
-                          <img src={resolveImageUrl(thumb)} alt="" loading="lazy" />
-                        ) : (
-                          <i className="ph ph-image" aria-hidden="true"></i>
-                        )}
+                        <div className="nhp-need__thumb-box">
+                          {thumb ? (
+                            <img src={resolveImageUrl(thumb)} alt="" loading="lazy" />
+                          ) : (
+                            <i className="ph ph-image" aria-hidden="true"></i>
+                          )}
+                        </div>
+                        <span className="nhp-need__thumb-label">
+                          {opt.name.replace('Nutrition Powder', '').replace('Gir Cow Bilona', '')}
+                        </span>
                       </button>
                     );
                   })}
                 </div>
 
-                <h3 className="nhp-need__product">{activeItem.name}</h3>
-                <p className="nhp-need__hint">Choose your pack size</p>
+                <div className="nhp-need__details">
+                  <h3 className="nhp-need__product">{activeItem.name}</h3>
+                  <p className="nhp-need__hint">Choose your pack size</p>
 
-                <div className="nhp-need__packs" role="group" aria-label="Choose a pack size">
-                  {(activeItem.variants ?? []).map((v) => (
-                    <button
-                      key={v.id}
-                      type="button"
-                      className={`nhp-need__pack${v.id === activeVariant.id ? ' is-active' : ''}`}
-                      onClick={() => setActiveVariantId(v.id)}
-                      aria-pressed={v.id === activeVariant.id}
-                      disabled={!isVariantAvailable(v)}
-                    >
-                      {v.variantName}
-                    </button>
-                  ))}
-                </div>
+                  <div className="nhp-need__packs" role="group" aria-label="Choose a pack size">
+                    {(activeItem.variants ?? []).map((v) => (
+                      <button
+                        key={v.id}
+                        type="button"
+                        className={`nhp-need__pack${v.id === activeVariant.id ? ' is-active' : ''}`}
+                        onClick={() => setActiveVariantId(v.id)}
+                        aria-pressed={v.id === activeVariant.id}
+                        disabled={!isVariantAvailable(v)}
+                      >
+                        <i className="ph ph-leaf" aria-hidden="true"></i>
+                        <div className="nhp-need__pack-info">
+                          <strong>{v.variantName}</strong>
+                          <span>{money(v.sellingPrice)}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
 
-                <div className="nhp-need__buyrow">
-                  <div className="nhp-need__qty" aria-label="Quantity">
-                    <span>Quantity</span>
-                    <div className="nhp-need__stepper">
-                      <button type="button" onClick={() => setQty((q) => Math.max(1, q - 1))} aria-label="Decrease quantity" disabled={qty <= 1}>
-                        <i className="ph ph-minus" aria-hidden="true"></i>
-                      </button>
-                      <strong aria-live="polite">{qty}</strong>
-                      <button type="button" onClick={() => setQty((q) => Math.min(99, q + 1))} aria-label="Increase quantity">
-                        <i className="ph ph-plus" aria-hidden="true"></i>
-                      </button>
+                  <hr className="nhp-need__divider" />
+
+                  <div className="nhp-need__action-row">
+                    <div className="nhp-need__qty" aria-label="Quantity">
+                      <span className="nhp-need__label-small">QUANTITY</span>
+                      <div className="nhp-need__stepper">
+                        <button type="button" onClick={() => setQty((q) => Math.max(1, q - 1))} aria-label="Decrease quantity" disabled={qty <= 1}>
+                          <i className="ph ph-minus" aria-hidden="true"></i>
+                        </button>
+                        <strong aria-live="polite">{qty}</strong>
+                        <button type="button" onClick={() => setQty((q) => Math.min(99, q + 1))} aria-label="Increase quantity">
+                          <i className="ph ph-plus" aria-hidden="true"></i>
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                  <div className="nhp-need__total">
-                    <span>Total Price</span>
-                    <strong>{money(total)}</strong>
+                    <div className="nhp-need__total">
+                      <span className="nhp-need__label-small">TOTAL PRICE</span>
+                      <strong>{money(total)}</strong>
+                    </div>
+                    
+                    <button
+                      type="button"
+                      className="nhp-need__add"
+                      data-add-to-cart
+                      onClick={handleAdd}
+                      disabled={!available}
+                    >
+                      <i className="ph ph-shopping-cart" aria-hidden="true"></i>
+                      {available ? 'ADD TO CART' : 'OUT OF STOCK'}
+                    </button>
                   </div>
                 </div>
-
-                <button
-                  type="button"
-                  className="nhp-need__add"
-                  data-add-to-cart
-                  onClick={handleAdd}
-                  disabled={!available}
-                >
-                  <i className="ph ph-shopping-cart" aria-hidden="true"></i>
-                  {available ? 'ADD TO CART' : 'OUT OF STOCK'}
-                </button>
               </>
             ) : (
               <p className="nhp-need__empty">No products available right now — fresh batches are on their way.</p>

@@ -35,20 +35,29 @@ const TRUST_ITEMS = [
   },
 ];
 
+import { StorefrontSettings } from '@/types';
+
 /**
  * Phase 3 — Hero + trust strip. Static copy, links only, no backend call.
  * Server Component.
  */
-export function NhpHero() {
+export function NhpHero({ storeSettings }: { storeSettings?: StorefrontSettings }) {
+  const showHeading = storeSettings?.show_homepage_heading !== '0';
+
   return (
     <>
       <section className="nhp-hero" aria-label="Gawdee organic promise">
         <div className="nhp-hero__inner">
           <p className="nhp-hero__eyebrow">
-            <i className="ph-fill ph-leaf" aria-hidden="true"></i>
+            <i className="ph-fill ph-circle" aria-hidden="true"></i>
             1.2 Million+ Families Trust GAWDEE Organic
           </p>
-          <h1 className="nhp-hero__title">Nature&rsquo;s Goodness, Traditionally Made.</h1>
+          {showHeading && (
+            <h1 className="nhp-hero__title">
+              Nature&rsquo;s Goodness,<br />
+              <em>Traditionally Made.</em>
+            </h1>
+          )}
           <p className="nhp-hero__sub">
             Authentic Indian superfoods crafted with ancient Vedic Bilona churning and slow
             wood-pressing. Handcrafted with reverence in small batches directly from native
@@ -56,7 +65,7 @@ export function NhpHero() {
           </p>
           <div className="nhp-hero__ctas">
             <Link href="#shop" className="nhp-hero__cta nhp-hero__cta--solid">
-              Shop Fresh Harvest
+              Shop Fresh Harvest &rarr;
             </Link>
             <Link href="#heritage" className="nhp-hero__cta nhp-hero__cta--outline">
               Explore Our Heritage

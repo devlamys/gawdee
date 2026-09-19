@@ -37,6 +37,8 @@ export const Footer: React.FC<FooterProps> = ({ settings }) => {
     }
   };
 
+  const showFooterHeading = settings?.show_footer_heading !== '0';
+
   return (
     <footer className="commerce-footer" id="site-footer">
       <div className="commerce-footer__watermark" aria-hidden="true"></div>
@@ -77,7 +79,7 @@ export const Footer: React.FC<FooterProps> = ({ settings }) => {
         </div>
 
         <nav className="commerce-footer__nav" aria-label="Shop categories">
-          <h2>Shop Categories</h2>
+          {showFooterHeading && <h2>Shop Categories</h2>}
           <ul>
             <li><Link href="/products?category=ghee">Vedic A2 Gir Cow Ghee</Link></li>
             <li><Link href="/products?category=oils">Wood Pressed Oils</Link></li>
@@ -89,7 +91,7 @@ export const Footer: React.FC<FooterProps> = ({ settings }) => {
         </nav>
 
         <nav className="commerce-footer__nav" aria-label="Policies and purity">
-          <h2>Policies & Purity</h2>
+          {showFooterHeading && <h2>Policies & Purity</h2>}
           <ul>
             <li><Link href="/lab-reports">Lab Reports & Transparency</Link></li>
             <li><Link href="/shipping-policy">Shipping & Transit Policy</Link></li>
@@ -101,7 +103,7 @@ export const Footer: React.FC<FooterProps> = ({ settings }) => {
         </nav>
 
         <div className="commerce-footer__help" aria-label="Need help">
-          <h2>Need Help?</h2>
+          {showFooterHeading && <h2>Need Help?</h2>}
           <p className="footer-help__hours">
             Our wellness caretakers are available Monday &ndash; Saturday, 9 AM &ndash; 7 PM IST.
           </p>
@@ -123,7 +125,7 @@ export const Footer: React.FC<FooterProps> = ({ settings }) => {
         </div>
 
         <div className="commerce-footer__signup">
-          <h2>Stay Updated</h2>
+          {showFooterHeading && <h2>Stay Updated</h2>}
           <p>Subscribe for wellness tips, seasonal harvests, and exclusive offers.</p>
           <form className="footer-mini-form" onSubmit={handleSubscribe}>
             <label className="sr-only" htmlFor="footer-email">

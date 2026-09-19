@@ -326,6 +326,8 @@ export interface StorefrontSettings {
   site_design_v1?: string;
   storefront_collections_v1?: string;
   use_new_homepage?: string;
+  show_homepage_heading?: string;
+  show_footer_heading?: string;
 }
 
 export interface StorefrontResponse {
