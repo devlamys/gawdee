@@ -340,13 +340,16 @@ em {
 }
 
 .button--secondary {
-  background: var(--gawdee-secondary);
-  color: var(--gawdee-white);
-  box-shadow: 0 10px 24px rgba(29, 94, 59, 0.25);
+  background: #ffffff;
+  color: var(--gawdee-primary);
+  border: 1.5px solid var(--gawdee-primary);
+  box-shadow: 0 4px 14px rgba(0, 154, 132, 0.12);
 }
 .button--secondary:hover {
   background: var(--gawdee-primary);
-  box-shadow: 0 14px 30px rgba(6, 62, 43, 0.35);
+  color: #ffffff;
+  border-color: var(--gawdee-primary);
+  box-shadow: 0 8px 22px rgba(0, 154, 132, 0.25);
 }
 
 .button--cream {

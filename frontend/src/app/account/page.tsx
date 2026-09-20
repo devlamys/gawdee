@@ -164,7 +164,7 @@ export default function AccountPage() {
             type="button"
             onClick={handleLogout}
             className="button button--secondary"
-            style={{ color: '#d9534f', borderColor: '#d9534f' }}
+            style={{ color: '#d9534f', borderColor: '#d9534f', minHeight: '40px', height: '40px', padding: '0 1.2rem', fontSize: '0.85rem' }}
           >
             <i className="ph ph-sign-out"></i> Log Out
           </button>
@@ -281,7 +281,7 @@ export default function AccountPage() {
                       <Link
                         className="button button--secondary"
                         href={`/account/orders/${order.order_number}`}
-                        style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}
+                        style={{ fontSize: '0.85rem', padding: '0 1rem', minHeight: '38px', height: '38px', lineHeight: '1' }}
                       >
                         View Tracking <i className="ph ph-arrow-right"></i>
                       </Link>

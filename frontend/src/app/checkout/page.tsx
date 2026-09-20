@@ -409,6 +409,12 @@ export default function CheckoutPage() {
                     <input
                       value={couponCode}
                       onChange={(e) => setCouponCode(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleApplyCoupon();
+                        }
+                      }}
                       placeholder={activeOfferCode ? `e.g. ${activeOfferCode}` : 'Enter offer code'}
                       style={{ flex: 1, padding: '0.5rem 0.8rem', border: '1px solid #ccc', borderRadius: '8px', textTransform: 'uppercase' }}
                     />
@@ -416,7 +422,7 @@ export default function CheckoutPage() {
                       type="button"
                       onClick={handleApplyCoupon}
                       className="button button--secondary"
-                      style={{ padding: '0.5rem 1.2rem' }}
+                      style={{ padding: '0 1.2rem', minHeight: '38px', height: '38px', lineHeight: '1', fontSize: '0.85rem' }}
                     >
                       Apply
                     </button>

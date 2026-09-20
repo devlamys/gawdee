@@ -137,7 +137,7 @@ body.sf-modern {
 
 /* Buttons — Pill buttons styled after Animated Hero .gx-btn-cart and .gx-btn-lux */
 .sf-button,
-.button,
+.button:not(.button--secondary),
 .button--primary,
 .gawdee-btn-primary,
 [data-add-to-cart]:not(.gx-btn-cart) {
@@ -163,7 +163,7 @@ body.sf-modern {
     box-shadow 0.3s ease !important;
 }
 .sf-button:hover,
-.button:hover,
+.button:not(.button--secondary):hover,
 .button--primary:hover,
 .gawdee-btn-primary:hover,
 [data-add-to-cart]:not(.gx-btn-cart):hover {

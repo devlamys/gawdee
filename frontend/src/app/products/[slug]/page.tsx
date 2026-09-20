@@ -205,10 +205,13 @@ export default function ProductDetailPage() {
   }, [slug, selectVariant]);
 
   useEffect(() => {
-    if (!reviewProductId || authLoading || !customer) {
+    if (!reviewProductId || authLoading) return;
+    if (!customer) {
+      setEligibilityLoading(false);
       return;
     }
     let cancelled = false;
+    setEligibilityLoading(true);
     api.getReviewEligibility(reviewProductId)
       .then((res) => {
         if (!cancelled) setReviewEligibility(res);
@@ -220,7 +223,7 @@ export default function ProductDetailPage() {
         if (!cancelled) setEligibilityLoading(false);
       });
     return () => { cancelled = true; };
-  }, [reviewProductId, customer, authLoading]);
+  }, [reviewProductId, customer, authLoading, selected?.id, selected?.slug]);
 
 
 
@@ -559,17 +562,23 @@ export default function ProductDetailPage() {
               <p style={{ color: '#777', margin: '0.3rem 0 0' }}>Real feedback from verified ritual consumers.</p>
             </div>
             {!authLoading && !customer ? (
-              <Link className="button button--secondary" href={`/login?next=/products/${slug}`} style={{ borderColor: '#009a84', color: '#009a84' }}>
+              <Link className="button button--secondary" href={`/login?next=/products/${slug}`}>
                 Sign in to review
               </Link>
             ) : (
               <button
                 className="button button--secondary"
                 type="button"
-                disabled={eligibilityLoading || !reviewEligibility?.eligible}
-                onClick={() => setReviewModalOpen(true)}
+                disabled={eligibilityLoading || Boolean(reviewEligibility?.reviewed)}
+                onClick={() => {
+                  if (reviewEligibility && !reviewEligibility.eligible && !reviewEligibility.purchased) {
+                    setReviewError('Only verified buyers who have purchased this product can leave a review.');
+                  } else {
+                    setReviewError('');
+                  }
+                  setReviewModalOpen(true);
+                }}
                 title={reviewEligibility?.reviewed ? 'You already reviewed this product' : !reviewEligibility?.purchased ? 'Available after purchasing this product' : undefined}
-                style={{ borderColor: '#009a84', color: '#009a84' }}
               >
                 {eligibilityLoading ? 'Checking purchase...' : reviewEligibility?.reviewed ? 'Review submitted' : 'Write a review'}
               </button>
