@@ -362,6 +362,14 @@ export default function ProductDetailPage() {
           <div className="pv-details">
             <h1 className="pv-title">{displayTitle || 'MULTIVITAMIN GUMMIES\nFOR ADULTS'}</h1>
 
+            <p className="pv-subtitle">
+              {((item as any)?.subtitle || legacyInfo?.benefits || legacyInfo?.description || item?.description || 'MILK FROM INDIGENOUS GIR COWS OF GUJARAT | BILONA-CHURNED FROM CURD | NATURALLY RICH IN CLA & BUTYRIC ACID')
+                .replace(/<[^>]*>/g, '')
+                .trim()
+                .slice(0, 210)
+                .toUpperCase()}
+            </p>
+
             <div className="pv-social-proof">
               <span className="pv-stars">★★★★★</span>
               <span className="pv-reviews-count">{reviews.length > 0 ? `4.8 (${reviews.length}+ Reviews)` : '2,842+ Reviews'}</span>
