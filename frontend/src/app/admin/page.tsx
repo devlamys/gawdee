@@ -1052,7 +1052,7 @@ function AdminPageContent() {  const searchParams = useSearchParams();
               className="admin-button admin-button--primary"
               type="button"
               onClick={() => {
-                setModalData({ title: '', file_path: '', product_slug: '', sort_order: 0 });
+                setModalData({ title: '', file_path: '', poster_path: '', external_url: '', product_slug: '', sort_order: 0 });
                 setActiveModal('reel');
               }}
             >
@@ -2034,7 +2034,7 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                   {modalData.id ? `Edit Reel: ${modalData.title}` : 'New Reel'}
                 </h3>
                 <p style={{ margin: '4px 0 0', fontSize: '0.72rem', color: '#7b8981' }}>
-                  Instagram-style video clips linking to catalog products.
+                  Add a reel/video preview, a thumbnail image, and the full video destination.
                 </p>
               </div>
               <button
@@ -2116,6 +2116,57 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                       />
                     </label>
                   </div>
+                  <small style={{ display: 'block', color: '#6b7a73', marginTop: '6px', lineHeight: 1.5 }}>
+                    Upload the short video clip used for the muted autoplay preview on the reels page. This is the preview section, not the full video destination.
+                  </small>
+                </label>
+
+                <label>
+                  <span>Thumbnail / Poster Image</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="text"
+                      placeholder="/assets/uploads/... or upload"
+                      value={modalData.poster_path || ''}
+                      onChange={(e) => setModalData({ ...modalData, poster_path: e.target.value })}
+                      style={{ flex: 1 }}
+                    />
+                    <label
+                      className="admin-button admin-button--ghost"
+                      style={{ whiteSpace: 'nowrap', cursor: 'pointer', padding: '9px 12px' }}
+                    >
+                      <i className="ph ph-upload-simple"></i> Upload
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleUploadImage(file, (url) => {
+                              setModalData((prev: any) => ({ ...prev, poster_path: url }));
+                            }, 'reels');
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <small style={{ display: 'block', color: '#6b7a73', marginTop: '6px', lineHeight: 1.5 }}>
+                    This is the cover image shown before the video preview plays. It is the static thumbnail users see in the reel card.
+                  </small>
+                </label>
+
+                <label>
+                  <span>Full Video Link (Instagram / YouTube / other)</span>
+                  <input
+                    type="url"
+                    placeholder="https://www.instagram.com/... or https://youtu.be/..."
+                    value={modalData.external_url || ''}
+                    onChange={(e) => setModalData({ ...modalData, external_url: e.target.value })}
+                  />
+                  <small style={{ display: 'block', color: '#6b7a73', marginTop: '6px', lineHeight: 1.5 }}>
+                    This is the full original video page. When a user clicks the reel, they are taken here to watch the complete video on Instagram, YouTube, or the source platform.
+                  </small>
                 </label>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
@@ -2127,6 +2178,9 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                       value={modalData.product_slug || ''}
                       onChange={(e) => setModalData({ ...modalData, product_slug: e.target.value })}
                     />
+                    <small style={{ display: 'block', color: '#6b7a73', marginTop: '6px', lineHeight: 1.5 }}>
+                      Optional: if filled, the reel opens that product page instead of the external video link.
+                    </small>
                   </label>
                   <label>
                     <span>Sort Order</span>
@@ -2136,6 +2190,9 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                       value={modalData.sort_order ?? 0}
                       onChange={(e) => setModalData({ ...modalData, sort_order: parseInt(e.target.value) || 0 })}
                     />
+                    <small style={{ display: 'block', color: '#6b7a73', marginTop: '6px', lineHeight: 1.5 }}>
+                      Controls the order of reels on the page. Lower numbers appear first.
+                    </small>
                   </label>
                 </div>
 

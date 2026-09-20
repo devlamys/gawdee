@@ -2,8 +2,9 @@ import React from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { resolveImageUrl } from '@/lib/utils';
+import ReelsPreviewCard from '@/components/ReelsPreviewCard';
 
-export const revalidate = 120;
+export const dynamic = 'force-dynamic';
 
 export default async function ReelsPage() {
   let media: Awaited<ReturnType<typeof api.getHomepageMedia>>['media'] = [];
@@ -53,36 +54,9 @@ export default async function ReelsPage() {
           <>
             {media.length > 0 && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 260px), 1fr))', gap: '1.5rem', marginBottom: '3rem' }}>
-                {media.map((m) => {
-                  const card = (
-                    <>
-                      {(m.file_path || m.poster_path) && (
-                        <img
-                          src={resolveImageUrl(m.file_path || m.poster_path)}
-                          alt={m.alt_text || m.title || 'Gawdee reel'}
-                          loading="lazy"
-                          style={{ width: '100%', height: '320px', objectFit: 'cover' }}
-                        />
-                      )}
-                      <div style={{ padding: '1.2rem' }}>
-                        {m.title && <h2 style={{ fontSize: '1.1rem', margin: '0 0 0.3rem', color: '#111' }}>{m.title}</h2>}
-                        {m.subtitle && <p style={{ fontSize: '0.9rem', color: '#666', margin: 0 }}>{m.subtitle}</p>}
-                      </div>
-                    </>
-                  );
-                  return (
-                    <article
-                      key={m.id}
-                      style={{ background: '#fff', borderRadius: '16px', overflow: 'hidden', border: '1px solid #eee', boxShadow: '0 4px 14px rgba(0,0,0,0.03)' }}
-                    >
-                      {m.product_slug ? (
-                        <Link href={`/products/${m.product_slug}`} style={{ display: 'block', color: 'inherit' }}>{card}</Link>
-                      ) : (
-                        card
-                      )}
-                    </article>
-                  );
-                })}
+                {media.map((m) => (
+                  <ReelsPreviewCard key={m.id} reel={m} />
+                ))}
               </div>
             )}
 
