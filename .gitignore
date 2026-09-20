@@ -14,8 +14,7 @@ build/
 venv/
 env/
 .env
-*.sqlite
-*.db
+
 
 # ========================
 # Node / Frontend
