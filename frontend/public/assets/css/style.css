@@ -8691,6 +8691,10 @@ em {
     grid-template-columns: repeat(2, 1fr);
   }
   .header-announcement {
+    width: 100% !important;
+    min-height: 30px !important;
+    padding: 4px 12px !important;
+    border-radius: 0 !important;
     font-size: 0.68rem !important;
   }
   .header-announcement__content {

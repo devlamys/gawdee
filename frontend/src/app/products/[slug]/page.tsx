@@ -327,7 +327,7 @@ export default function ProductDetailPage() {
 
 
   return (
-    <div className="product-page product-page--reference ref-product-page" style={{ padding: '6rem 0 5rem' }}>
+    <div className="product-page product-page--reference ref-product-page">
       <div className="container pv-container">
         <section className="pv-hero-grid">
           {/* Left: Gallery (Interactive) */}
