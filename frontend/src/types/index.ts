@@ -258,6 +258,19 @@ export interface HomepageMedia {
   product_slug?: string;
 }
 
+export interface Offer {
+  id: number;
+  title?: string;
+  subtitle?: string;
+  description?: string;
+  badge?: string;
+  image_url?: string;
+  link_url?: string;
+  cta_label?: string;
+  sort_order?: number;
+  is_active?: boolean;
+}
+
 export interface CMSSection {
   id: number;
   section_key: string;

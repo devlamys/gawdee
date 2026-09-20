@@ -7,6 +7,7 @@ import {
   Testimonial,
   VideoTestimonial,
   HomepageMedia,
+  Offer,
   StorefrontResponse,
   CatalogCategory,
   CatalogItem,
@@ -178,6 +179,7 @@ export const api = {
   // Social & Content
   getTestimonials: () => fetcher<{ ok: boolean; testimonials: Testimonial[] }>('/testimonials', { next: { revalidate: 120 } }),
   getVideoTestimonials: () => fetcher<{ ok: boolean; video_testimonials: VideoTestimonial[] }>('/video-testimonials', { next: { revalidate: 120 } }),
+  getOffers: () => fetcher<{ ok: boolean; offers: Offer[] }>('/offers', { cache: 'no-store' }),
   getHomepageMedia: (section = 'reels') => fetcher<{ ok: boolean; media: HomepageMedia[] }>(`/homepage-media?section=${section}`, { cache: 'no-store' }),
   getBlog: (limit = 10) => fetcher<{ ok: boolean; posts: BlogPost[] }>(`/blog?limit=${limit}`, { next: { revalidate: 120 } }),
   getBlogPost: (slug: string) => fetcher<{ ok: boolean; post: BlogPost }>(`/blog/${slug}`),

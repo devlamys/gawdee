@@ -371,6 +371,17 @@ async def homepage_media(section: Optional[str] = None, db: aiosqlite.Connection
     return {"ok": True, "media": [dict(r) for r in rows]}
 
 
+# ── GET /api/offers ──────────────────────────────────────────────────────────
+
+@router.get("/offers")
+async def offers(db: aiosqlite.Connection = Depends(db_dep)):
+    async with db.execute(
+        "SELECT * FROM offers WHERE is_active=1 ORDER BY sort_order ASC, id DESC"
+    ) as cur:
+        rows = await cur.fetchall()
+    return {"ok": True, "offers": [dict(r) for r in rows]}
+
+
 # ── GET /api/video-testimonials ───────────────────────────────────────────────
 
 @router.get("/video-testimonials")

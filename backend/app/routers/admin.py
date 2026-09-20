@@ -600,6 +600,54 @@ async def admin_delete_reel(reel_id: int, admin: Dict[str, Any] = Depends(get_cu
     return {"ok": True, "message": "Reel deleted"}
 
 
+# ── Offers Manager ─────────────────────────────────────────────────────────────
+
+@router.get("/offers")
+async def admin_get_offers(admin: Dict[str, Any] = Depends(get_current_admin)):
+    offers = await fetch_all("SELECT * FROM offers ORDER BY sort_order ASC, id DESC")
+    return {"ok": True, "offers": [dict(r) for r in offers]}
+
+class SaveOfferPayload(BaseModel):
+    id: Optional[int] = None
+    title: str
+    subtitle: Optional[str] = ""
+    description: Optional[str] = ""
+    badge: Optional[str] = "HOT DEAL"
+    image_url: Optional[str] = ""
+    link_url: Optional[str] = "#shop"
+    cta_label: Optional[str] = "Shop now"
+    sort_order: Optional[int] = 0
+    is_active: Optional[bool] = True
+
+@router.post("/offers")
+async def admin_save_offer(payload: SaveOfferPayload, admin: Dict[str, Any] = Depends(get_current_admin)):
+    if payload.id:
+        await execute("""
+            UPDATE offers SET
+                title = ?, subtitle = ?, description = ?, badge = ?, image_url = ?, link_url = ?, cta_label = ?, sort_order = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (
+            payload.title, payload.subtitle, payload.description, payload.badge,
+            payload.image_url, payload.link_url, payload.cta_label,
+            payload.sort_order, 1 if payload.is_active else 0, payload.id,
+        ))
+    else:
+        await execute("""
+            INSERT INTO offers (title, subtitle, description, badge, image_url, link_url, cta_label, sort_order, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            payload.title, payload.subtitle, payload.description, payload.badge,
+            payload.image_url, payload.link_url, payload.cta_label,
+            payload.sort_order, 1 if payload.is_active else 0,
+        ))
+    return {"ok": True, "message": "Offer saved successfully"}
+
+@router.delete("/offers/{offer_id}")
+async def admin_delete_offer(offer_id: int, admin: Dict[str, Any] = Depends(get_current_admin)):
+    await execute("DELETE FROM offers WHERE id = ?", (offer_id,))
+    return {"ok": True, "message": "Offer deleted"}
+
+
 # ── Banners & Banners Two ───────────────────────────────────────────────────
 
 @router.get("/banners")

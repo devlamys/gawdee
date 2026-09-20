@@ -309,6 +309,24 @@ export const adminApi = {
     });
   },
 
+  // Offers
+  async getOffers() {
+    return adminFetch('/offers');
+  },
+
+  async saveOffer(payload: any) {
+    return adminFetch('/offers', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async deleteOffer(offerId: number) {
+    return adminFetch(`/offers/${offerId}`, {
+      method: 'DELETE',
+    });
+  },
+
   // Banners
   async getBanners() {
     return adminFetch('/banners');

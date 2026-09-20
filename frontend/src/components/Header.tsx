@@ -111,7 +111,7 @@ export const Header: React.FC<HeaderProps> = ({ settings }) => {
           </div>
           {offerCode && (
             <div className="announcement-cta">
-              <Link href="/#offers" className="announcement-badge">
+              <Link href="/offers" className="announcement-badge">
                 <i className="ph ph-ticket"></i> Code: <strong>{offerCode}</strong>
               </Link>
             </div>
@@ -206,7 +206,7 @@ export const Header: React.FC<HeaderProps> = ({ settings }) => {
           <Link href="/reels" className="nav-link">
             Reels <span className="nav-badge-hot">NEW</span>
           </Link>
-          <Link href="/#offers" className="nav-link">
+          <Link href="/offers" className="nav-link nav-link--offers">
             Offers
           </Link>
           <Link href="/blog" className="nav-link">
@@ -374,7 +374,7 @@ export const Header: React.FC<HeaderProps> = ({ settings }) => {
           </span>
           <span>Watch Reels &amp; Videos</span> <i className="ph ph-arrow-right"></i>
         </Link>
-        <Link href="/#offers" onClick={() => setMobileMenuOpen(false)}>
+        <Link href="/offers" onClick={() => setMobileMenuOpen(false)}>
           <span className="mobile-nav__visual">
             <img src="/assets/icons/navigation/offers.webp" alt="" width={38} height={38} loading="lazy" />
           </span>

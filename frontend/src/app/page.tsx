@@ -5,8 +5,9 @@ import { ProductCard } from '@/components/ProductCard';
 import { OfferPopup } from '@/components/OfferPopup';
 import { RailButton } from '@/components/RailButton';
 import { NewsletterForm } from '@/components/NewsletterForm';
+import { OfferCards } from '@/components/OfferCards';
 import { api } from '@/lib/api';
-import { CatalogCategory, CatalogItem, StorefrontSettings, Testimonial } from '@/types';
+import { CatalogCategory, CatalogItem, Offer, StorefrontSettings, Testimonial } from '@/types';
 import { NewHomePage } from '@/components/new-home/NewHomePage';
 import { resolveImageUrl } from '@/lib/utils';
 
@@ -24,6 +25,7 @@ export default async function HomePage() {
   let items: CatalogItem[] = [];
   let categories: CatalogCategory[] = [];
   let testimonials: Testimonial[] = [];
+  let offers: Offer[] = [];
   let offerCode = '';
   let offerPercent = '';
   let offerPopupEnabled = true;
@@ -57,6 +59,15 @@ export default async function HomePage() {
     }
   } catch {
     testimonials = [];
+  }
+
+  try {
+    const offersRes = await api.getOffers();
+    if (offersRes?.ok && Array.isArray(offersRes.offers)) {
+      offers = offersRes.offers;
+    }
+  } catch {
+    offers = [];
   }
 
   try {
@@ -204,6 +215,8 @@ export default async function HomePage() {
           )}
         </div>
       </section>
+
+      {offers.length > 0 && <OfferCards offers={offers} />}
 
       {/* 4. Organic Categories Grid */}
       <section className="commerce-section category-section" id="categories">

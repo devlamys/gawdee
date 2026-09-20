@@ -132,7 +132,7 @@ export const AiChatDrawer: React.FC = () => {
         {/* Latest offer card (backend-configured offer) */}
         {offerCode && (
           <article className="ai-offer-card" aria-label="Latest offer">
-            <Link className="ai-offer-card__media" href="/#offers" aria-label="View offer">
+            <Link className="ai-offer-card__media" href="/offers" aria-label="View offer">
               <img
                 src="/assets/images/hero-slide-independence-v5.webp"
                 alt="Special offer"
