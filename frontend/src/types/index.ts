@@ -133,13 +133,14 @@ export interface HeroSlideRow {
 }
 
 export interface Review {  id: number;
-  product_id: string;
+  product_id: number;
   rating: number;
   // Backend field names (GET /api/products/{slug} and POST /api/product-review)
   review?: string;
   name?: string;
   date?: string;
   created_at?: string;
+  location?: string;
   // Legacy aliases accepted when rendering
   author_name?: string;
   title?: string;

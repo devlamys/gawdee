@@ -19,6 +19,7 @@ from ..database import (
     migrate,
     get_catalog_rows,
     get_item_with_variants,
+    get_item_by_id,
     get_variant_by_ref,
     map_variant_row,
 )
@@ -102,7 +103,7 @@ async def get_product(identifier: str, db: aiosqlite.Connection = Depends(db_dep
             product["item_id"] = item.get("id")
             product["item_slug"] = item.get("slug")
 
-    reviews = await get_product_reviews(db, product["id"])
+    reviews = await get_product_reviews(db, int(item["id"])) if item else []
     return {"ok": True, "product": product, "variants": variants, "item": item, "reviews": reviews}
 
 
@@ -125,19 +126,77 @@ async def subscribe(payload: SubscribeRequest, db: aiosqlite.Connection = Depend
 # ── POST /api/product-review ──────────────────────────────────────────────────
 
 class ReviewRequest(BaseModel):
-    product_id: str
-    name: str
-    email: EmailStr
+    product_id: int
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
     review: str
     rating: int
 
+
+async def _review_customer(request: Request, db: aiosqlite.Connection) -> dict:
+    session = await get_session(request)
+    customer_id = session.get("customer_user_id")
+    if not customer_id:
+        raise HTTPException(status_code=401, detail="Sign in to review a purchased product.")
+    async with db.execute(
+        "SELECT id, name, email FROM users WHERE id=? AND role='customer'",
+        (int(customer_id),),
+    ) as cur:
+        customer = await cur.fetchone()
+    if not customer:
+        raise HTTPException(status_code=401, detail="Your session is no longer valid. Please sign in again.")
+    return dict(customer)
+
+
+async def _has_purchased_product(db: aiosqlite.Connection, customer_id: int, product_id: int) -> bool:
+    async with db.execute(
+        """
+        SELECT 1
+        FROM orders o
+        JOIN order_items oi ON oi.order_id = o.id
+        JOIN variant v ON CAST(v.id AS TEXT) = oi.product_id
+                          OR (v.legacy_product_id != '' AND v.legacy_product_id = oi.product_id)
+        WHERE o.user_id = ? AND v.item_id = ?
+          AND (o.payment_status = 'paid' OR o.status = 'delivered')
+          AND o.status NOT IN ('cancelled', 'refunded')
+        LIMIT 1
+        """,
+        (customer_id, product_id),
+    ) as cur:
+        return await cur.fetchone() is not None
+
+
+@router.get("/products/{product_id}/review-eligibility")
+async def review_eligibility(product_id: int, request: Request, db: aiosqlite.Connection = Depends(db_dep)):
+    customer = await _review_customer(request, db)
+    purchased = await _has_purchased_product(db, int(customer["id"]), product_id)
+    async with db.execute(
+        "SELECT 1 FROM product_reviews WHERE product_id=? AND lower(email)=lower(?) LIMIT 1",
+        (product_id, customer["email"]),
+    ) as cur:
+        reviewed = await cur.fetchone() is not None
+    return {
+        "ok": True,
+        "eligible": purchased and not reviewed,
+        "purchased": purchased,
+        "reviewed": reviewed,
+        "customer": {"name": customer["name"], "email": customer["email"]},
+    }
+
 @router.post("/product-review")
-async def submit_review(payload: ReviewRequest, db: aiosqlite.Connection = Depends(db_dep)):
-    product = await get_product_by_id(db, payload.product_id)
+async def submit_review(payload: ReviewRequest, request: Request, db: aiosqlite.Connection = Depends(db_dep)):
+    customer = await _review_customer(request, db)
+    product = await get_item_by_id(db, payload.product_id)
     if not product:
         raise HTTPException(status_code=422, detail="This product is no longer available.")
-    if len(payload.name.strip()) < 2 or len(payload.name.strip()) > 80:
-        raise HTTPException(status_code=422, detail="Enter your name.")
+    if not await _has_purchased_product(db, int(customer["id"]), payload.product_id):
+        raise HTTPException(status_code=403, detail="Only customers who purchased this product can review it.")
+    async with db.execute(
+        "SELECT 1 FROM product_reviews WHERE product_id=? AND lower(email)=lower(?) LIMIT 1",
+        (payload.product_id, customer["email"]),
+    ) as cur:
+        if await cur.fetchone():
+            raise HTTPException(status_code=409, detail="You have already reviewed this product.")
     if payload.rating < 1 or payload.rating > 5:
         raise HTTPException(status_code=422, detail="Choose a rating from 1 to 5 stars.")
     review_text = payload.review.strip()
@@ -146,14 +205,15 @@ async def submit_review(payload: ReviewRequest, db: aiosqlite.Connection = Depen
 
     await db.execute(
         "INSERT INTO product_reviews (product_id, rating, review, name, email) VALUES (?, ?, ?, ?, ?)",
-        (payload.product_id, payload.rating, review_text, payload.name.strip(), str(payload.email).lower()),
+        (payload.product_id, payload.rating, review_text, customer["name"], customer["email"].lower()),
     )
     await db.commit()
     from datetime import datetime
+    created_at = datetime.now().isoformat(timespec="seconds")
     return {
         "ok": True,
         "message": "Thank you — your review is now published.",
-        "review": {"name": payload.name.strip(), "rating": payload.rating, "review": review_text, "date": datetime.now().strftime("%-d %b %Y")},
+        "review": {"name": customer["name"], "rating": payload.rating, "review": review_text, "created_at": created_at},
     }
 
 

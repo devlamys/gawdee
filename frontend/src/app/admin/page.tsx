@@ -130,6 +130,7 @@ function AdminPageContent() {  const searchParams = useSearchParams();
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
+  const [customerReviews, setCustomerReviews] = useState<any[]>([]);
   const [reels, setReels] = useState<any[]>([]);
   const [banners, setBanners] = useState<any[]>([]);
   const [bannersTwo, setBannersTwo] = useState<any[]>([]);
@@ -140,6 +141,11 @@ function AdminPageContent() {  const searchParams = useSearchParams();
   // Filter state for orders
   const [orderFilter, setOrderFilter] = useState('all');
   const [orderSearch, setOrderSearch] = useState('');
+
+  // Review list controls are submitted explicitly so the table never races
+  // older search requests while an administrator is still typing.
+  const [reviewSearch, setReviewSearch] = useState('');
+  const [reviewSort, setReviewSort] = useState('newest');
 
   // Filter state for categories
   const [categorySearch, setCategorySearch] = useState('');
@@ -293,6 +299,9 @@ function AdminPageContent() {  const searchParams = useSearchParams();
       } else if (view === 'orders') {
         const res = await adminApi.getOrders(orderFilter, orderSearch);
         if (res?.ok) setOrders(res.orders || []);
+      } else if (view === 'customer_reviews') {
+        const res = await adminApi.getCustomerReviews(reviewSearch, reviewSort);
+        if (res?.ok) setCustomerReviews(res.reviews || []);
       } else if (view === 'reels') {
         const res = await adminApi.getReels();
         if (res?.ok) setReels(res.reels || []);
@@ -321,7 +330,7 @@ function AdminPageContent() {  const searchParams = useSearchParams();
 
   useEffect(() => {
     loadViewData();
-  }, [view, orderFilter]);
+  }, [view, orderFilter, reviewSort]);
 
   // Product & Item Actions (canonical DTO rows always carry variants)
   const handleToggleProduct = async (p: any) => {
@@ -1041,6 +1050,85 @@ function AdminPageContent() {  const searchParams = useSearchParams();
       {/* ──────────────────────────────────────────────────────────────────────────
           5. REELS VIEW
           ────────────────────────────────────────────────────────────────────────── */}
+      {view === 'customer_reviews' && (
+        <section className="admin-card">
+          <div className="admin-card__head">
+            <div>
+              <h2>Customer reviews</h2>
+              <p>Verified product feedback from customers with a completed purchase.</p>
+            </div>
+            <span className="status-pill status-pill--paid">{customerReviews.length} reviews</span>
+          </div>
+
+          <div className="review-filter-bar">
+            <div className="field-icon review-search-field">
+              <i className="ph ph-magnifying-glass"></i>
+              <input
+                id="customer-review-search"
+                type="search"
+                placeholder="Search name, email, product or review..."
+                value={reviewSearch}
+                onChange={(e) => setReviewSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) loadViewData();
+                }}
+              />
+              {reviewSearch && (
+                <button
+                  type="button"
+                  className="review-search-clear"
+                  aria-label="Clear review search"
+                  title="Clear search"
+                  onClick={() => {
+                    setReviewSearch('');
+                    adminApi.getCustomerReviews('', reviewSort).then((res: any) => {
+                      if (res?.ok) setCustomerReviews(res.reviews || []);
+                    }).catch((err: Error) => showFlash(err.message, 'error'));
+                    setTimeout(() => (document.getElementById('customer-review-search') as HTMLInputElement | null)?.focus(), 0);
+                  }}
+                ><i className="ph ph-x"></i></button>
+              )}
+            </div>
+            <button className="admin-button admin-button--secondary" type="button" onClick={loadViewData}>
+              <i className="ph ph-magnifying-glass"></i> Search
+            </button>
+          </div>
+
+          <div className="admin-table-wrap">
+            {customerReviews.length === 0 ? (
+              <div className="empty-state">
+                <i className="ph ph-star"></i>
+                <h3>No matching reviews</h3>
+                <p>Purchased-customer reviews will appear here.</p>
+              </div>
+            ) : (
+              <table className="admin-table review-table">
+                <thead><tr>
+                  <th aria-sort={reviewSort === 'product' ? 'ascending' : 'none'}><button type="button" onClick={() => setReviewSort('product')}>Product <i className="ph ph-arrows-down-up"></i></button></th>
+                  <th aria-sort={reviewSort === 'name' ? 'ascending' : 'none'}><button type="button" onClick={() => setReviewSort('name')}>Customer <i className="ph ph-arrows-down-up"></i></button></th>
+                  <th aria-sort={reviewSort === 'email' ? 'ascending' : 'none'}><button type="button" onClick={() => setReviewSort('email')}>Email <i className="ph ph-arrows-down-up"></i></button></th>
+                  <th aria-sort={reviewSort.startsWith('rating') ? (reviewSort === 'rating_high' ? 'descending' : 'ascending') : 'none'}><button type="button" onClick={() => setReviewSort(reviewSort === 'rating_high' ? 'rating_low' : 'rating_high')}>Rating <i className="ph ph-arrows-down-up"></i></button></th>
+                  <th>Review</th>
+                  <th aria-sort={reviewSort === 'oldest' ? 'ascending' : reviewSort === 'newest' ? 'descending' : 'none'}><button type="button" onClick={() => setReviewSort(reviewSort === 'newest' ? 'oldest' : 'newest')}>Date <i className="ph ph-arrows-down-up"></i></button></th>
+                </tr></thead>
+                <tbody>
+                  {customerReviews.map((review) => (
+                    <tr key={review.id}>
+                      <td><Link href={`/products/${review.product_slug || review.product_id}`} target="_blank"><strong>{review.product_name || review.product_id}</strong></Link></td>
+                      <td><strong>{review.name}</strong>{Boolean(review.verified_purchase) && <small className="review-verified"><i className="ph-fill ph-seal-check"></i> Purchased</small>}</td>
+                      <td>{review.email}</td>
+                      <td><span className="review-rating" aria-label={`${review.rating} out of 5 stars`}>{review.rating} <i className="ph-fill ph-star"></i></span></td>
+                      <td className="review-copy">{review.review}</td>
+                      <td>{new Date(review.created_at).toLocaleDateString('en-IN')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </section>
+      )}
+
       {view === 'reels' && (
         <section className="admin-card">
           <div className="admin-card__head">

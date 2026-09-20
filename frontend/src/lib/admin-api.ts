@@ -273,6 +273,14 @@ export const adminApi = {
     return adminFetch(`/orders/${orderId}`);
   },
 
+  async getCustomerReviews(search = '', sort = 'newest', productId?: number) {
+    const params = new URLSearchParams();
+    if (search) params.set('search', search);
+    if (sort) params.set('sort', sort);
+    if (productId) params.set('product_id', String(productId));
+    return adminFetch(`/customer-reviews?${params.toString()}`);
+  },
+
   async updateOrderStatus(orderId: number, status: string, note?: string) {
     return adminFetch(`/orders/${orderId}/status`, {
       method: 'POST',

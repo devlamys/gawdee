@@ -17,6 +17,7 @@ import {
   variantDiscountPercent,
 } from '@/lib/catalog';
 import { ProductCard } from '@/components/ProductCard';
+import { useAuth } from '@/context/AuthContext';
 
 function calculateUnitPrice(price: number, weightStr?: string): string {
   if (!weightStr) return '';
@@ -53,6 +54,7 @@ export default function ProductDetailPage() {
 
   const { addItem } = useCart();
   const { isWishlisted, toggleWishlist } = useWishlist();
+  const { customer, loading: authLoading } = useAuth();
 
   // Separate state per concern: item data / selected variant / selected
   // image / reviews / related / cart quantity / loading / error.
@@ -62,7 +64,7 @@ export default function ProductDetailPage() {
   const [imgBroken, setImgBroken] = useState(false);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(false);
-  const [legacyProductId, setLegacyProductId] = useState<string | null>(null);
+  const [reviewProductId, setReviewProductId] = useState<number | null>(null);
   const [legacyInfo, setLegacyInfo] = useState<{ description?: string; benefits?: string; ingredients?: string }>({});
   const [relatedItems, setRelatedItems] = useState<CatalogItem[]>([]);
   const [quantity, setQuantity] = useState(1);
@@ -91,11 +93,12 @@ export default function ProductDetailPage() {
   // Review modal state
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [reviewRating, setReviewRating] = useState(5);
-  const [reviewAuthor, setReviewAuthor] = useState('');
-  const [reviewEmail, setReviewEmail] = useState('');
   const [reviewBody, setReviewBody] = useState('');
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [reviewSuccess, setReviewSuccess] = useState(false);
+  const [reviewError, setReviewError] = useState('');
+  const [reviewEligibility, setReviewEligibility] = useState<{ eligible: boolean; purchased: boolean; reviewed: boolean } | null>(null);
+  const [eligibilityLoading, setEligibilityLoading] = useState(false);
 
   // Notify Me toast (custom styled notice — never the browser alert()).
   const [notifyToast, setNotifyToast] = useState(false);
@@ -107,12 +110,10 @@ export default function ProductDetailPage() {
   const loadReviews = useCallback(async (variantSlug: string) => {
     setReviewsLoading(true);
     setReviews([]);
-    setLegacyProductId(null);
     try {
       const res = await api.getProduct(variantSlug);
       if (res.ok) {
         if (res.product) {
-          setLegacyProductId(res.product.id);
           setLegacyInfo({
             description: res.product.description,
             benefits: res.product.benefits,
@@ -132,6 +133,8 @@ export default function ProductDetailPage() {
   // gallery image and quantity ALL update together — old data never lingers.
   const selectVariant = useCallback((v: CatalogVariant) => {
     setSelected(v);
+    setReviewEligibility(null);
+    setEligibilityLoading(true);
     setQuantity(1);
     setImgBroken(false);
     setLegacyInfo({});
@@ -142,7 +145,6 @@ export default function ProductDetailPage() {
       loadReviews(v.slug);
     } else {
       setReviews([]);
-      setLegacyProductId(null);
     }
   }, [loadReviews]);
 
@@ -165,6 +167,7 @@ export default function ProductDetailPage() {
         if (res.ok && res.item && (res.item.variants ?? []).length > 0) {
           const itm = res.item;
           setItem(itm);
+          setReviewProductId(itm.id);
           // Prefer the variant addressed by the URL; else deterministic default.
           const match =
             itm.variants.find((v) => v.slug === slug || String(v.id) === String(slug) || v.sku === slug) ??
@@ -200,6 +203,24 @@ export default function ProductDetailPage() {
       cancelled = true;
     };
   }, [slug, selectVariant]);
+
+  useEffect(() => {
+    if (!reviewProductId || authLoading || !customer) {
+      return;
+    }
+    let cancelled = false;
+    api.getReviewEligibility(reviewProductId)
+      .then((res) => {
+        if (!cancelled) setReviewEligibility(res);
+      })
+      .catch(() => {
+        if (!cancelled) setReviewEligibility(null);
+      })
+      .finally(() => {
+        if (!cancelled) setEligibilityLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [reviewProductId, customer, authLoading]);
 
 
 
@@ -264,35 +285,36 @@ export default function ProductDetailPage() {
 
   const handleReviewSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!reviewAuthor.trim() || !reviewEmail.trim() || !reviewBody.trim()) return;
-    if (!legacyProductId) {
-      alert('Reviews are unavailable for this variant right now.');
+    setReviewError('');
+    if (!reviewBody.trim()) {
+      setReviewError('Write at least 15 characters about your experience.');
+      return;
+    }
+    if (!reviewProductId) {
+      setReviewError('Reviews are unavailable for this variant right now.');
       return;
     }
     setReviewSubmitting(true);
     try {
       const res = await api.submitReview({
-        product_id: legacyProductId,
-        name: reviewAuthor.trim(),
-        email: reviewEmail.trim(),
+        product_id: reviewProductId,
         review: reviewBody.trim(),
         rating: reviewRating,
       });
       if (res.ok) {
         setReviewSuccess(true);
         if (res.review) {
-          setReviews((prev) => [{ ...res.review, id: Date.now(), product_id: legacyProductId } as Review, ...prev]);
+          setReviews((prev) => [{ ...res.review, id: Date.now(), product_id: reviewProductId } as Review, ...prev]);
         }
         setTimeout(() => {
           setReviewModalOpen(false);
           setReviewSuccess(false);
-          setReviewAuthor('');
-          setReviewEmail('');
           setReviewBody('');
+          setReviewEligibility({ eligible: false, purchased: true, reviewed: true });
         }, 1500);
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to submit review');
+      setReviewError(err.message || 'Failed to submit review');
     } finally {
       setReviewSubmitting(false);
     }
@@ -536,14 +558,22 @@ export default function ProductDetailPage() {
               <h2 style={{ fontSize: '1.8rem', margin: 0 }}>Customer Reviews</h2>
               <p style={{ color: '#777', margin: '0.3rem 0 0' }}>Real feedback from verified ritual consumers.</p>
             </div>
-            <button
-              className="button button--secondary"
-              type="button"
-              onClick={() => setReviewModalOpen(true)}
-              style={{ borderColor: '#009a84', color: '#009a84' }}
-            >
-              Write a review
-            </button>
+            {!authLoading && !customer ? (
+              <Link className="button button--secondary" href={`/login?next=/products/${slug}`} style={{ borderColor: '#009a84', color: '#009a84' }}>
+                Sign in to review
+              </Link>
+            ) : (
+              <button
+                className="button button--secondary"
+                type="button"
+                disabled={eligibilityLoading || !reviewEligibility?.eligible}
+                onClick={() => setReviewModalOpen(true)}
+                title={reviewEligibility?.reviewed ? 'You already reviewed this product' : !reviewEligibility?.purchased ? 'Available after purchasing this product' : undefined}
+                style={{ borderColor: '#009a84', color: '#009a84' }}
+              >
+                {eligibilityLoading ? 'Checking purchase...' : reviewEligibility?.reviewed ? 'Review submitted' : 'Write a review'}
+              </button>
+            )}
           </div>
 
           {reviewsLoading && reviews.length === 0 ? (
@@ -708,6 +738,10 @@ export default function ProductDetailPage() {
         {/* Review Modal Dialog */}
         {reviewModalOpen && (
           <div
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setReviewModalOpen(false);
+            }}
             style={{
               position: 'fixed',
               top: 0,
@@ -722,7 +756,7 @@ export default function ProductDetailPage() {
               padding: '1rem',
             }}
           >
-            <div style={{ background: '#fff', borderRadius: '16px', maxWidth: '500px', width: '100%', padding: '2rem', position: 'relative' }}>
+            <div role="dialog" aria-modal="true" aria-labelledby="review-dialog-title" style={{ background: '#fff', borderRadius: '16px', maxWidth: '500px', width: '100%', padding: '2rem', position: 'relative' }}>
               <button
                 type="button"
                 onClick={() => setReviewModalOpen(false)}
@@ -732,7 +766,7 @@ export default function ProductDetailPage() {
                 <i className="ph ph-x"></i>
               </button>
 
-              <h3 style={{ fontSize: '1.4rem', marginBottom: '0.4rem' }}>Write a Review</h3>
+              <h3 id="review-dialog-title" style={{ fontSize: '1.4rem', marginBottom: '0.4rem' }}>Write a Review</h3>
               <p style={{ color: '#777', fontSize: '0.9rem', marginBottom: '1.5rem' }}>Share your experience with {item.name}</p>
 
               {reviewSuccess ? (
@@ -741,42 +775,20 @@ export default function ProductDetailPage() {
                   Thank you! Your review has been submitted.
                 </div>
               ) : (
-                <form onSubmit={handleReviewSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <form noValidate onSubmit={handleReviewSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>Rating</label>
-                    <div style={{ display: 'flex', gap: '0.5rem', fontSize: '1.6rem', color: '#c19a3d', cursor: 'pointer' }}>
+                    <div style={{ display: 'flex', gap: '0.25rem', color: '#c19a3d' }} aria-label={`${reviewRating} out of 5 stars`}>
                       {[1, 2, 3, 4, 5].map((star) => (
-                        <i
+                        <button
+                          type="button"
                           key={star}
-                          className={`ph ${star <= reviewRating ? 'ph-fill ph-star' : 'ph-star'}`}
                           onClick={() => setReviewRating(star)}
-                        ></i>
+                          aria-label={`${star} star${star === 1 ? '' : 's'}`}
+                          style={{ border: 0, background: 'transparent', color: 'inherit', padding: '0.2rem', cursor: 'pointer', fontSize: '1.6rem' }}
+                        ><i className={`ph ${star <= reviewRating ? 'ph-fill ph-star' : 'ph-star'}`}></i></button>
                       ))}
                     </div>
-                  </div>
-
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>Your Name</label>
-                    <input
-                      type="text"
-                      required
-                      value={reviewAuthor}
-                      onChange={(e) => setReviewAuthor(e.target.value)}
-                      placeholder="e.g. Priya Sharma"
-                      style={{ width: '100%', padding: '0.6rem 0.8rem', border: '1px solid #ccc', borderRadius: '8px' }}
-                    />
-                  </div>
-
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>Email Address</label>
-                    <input
-                      type="email"
-                      required
-                      value={reviewEmail}
-                      onChange={(e) => setReviewEmail(e.target.value)}
-                      placeholder="name@example.com"
-                      style={{ width: '100%', padding: '0.6rem 0.8rem', border: '1px solid #ccc', borderRadius: '8px' }}
-                    />
                   </div>
 
                   <div>
@@ -786,10 +798,14 @@ export default function ProductDetailPage() {
                       rows={4}
                       value={reviewBody}
                       onChange={(e) => setReviewBody(e.target.value)}
+                      aria-invalid={Boolean(reviewError)}
+                      aria-describedby={reviewError ? 'review-error' : undefined}
                       placeholder="Tell other families how you enjoyed this product…"
-                      style={{ width: '100%', padding: '0.6rem 0.8rem', border: '1px solid #ccc', borderRadius: '8px', fontFamily: 'inherit' }}
+                      style={{ width: '100%', padding: '0.6rem 0.8rem', border: '1px solid #ccc', borderRadius: '8px', fontFamily: 'inherit', resize: 'none' }}
                     ></textarea>
                   </div>
+
+                  {reviewError && <p id="review-error" role="alert" style={{ margin: 0, color: '#a12f2f', fontSize: '0.85rem' }}>{reviewError}</p>}
 
                   <button
                     type="submit"

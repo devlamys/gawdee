@@ -516,6 +516,53 @@ async def admin_get_order_detail(order_id: int, admin: Dict[str, Any] = Depends(
         "events": [dict(e) for e in events],
     }
 
+
+@router.get("/customer-reviews")
+async def admin_customer_reviews(
+    search: Optional[str] = None,
+    product_id: Optional[int] = None,
+    sort: str = "newest",
+    admin: Dict[str, Any] = Depends(get_current_admin),
+):
+    sort_sql = {
+        "newest": "r.id DESC",
+        "oldest": "r.id ASC",
+        "product": "p.name COLLATE NOCASE ASC, r.id DESC",
+        "name": "r.name COLLATE NOCASE ASC, r.id DESC",
+        "email": "r.email COLLATE NOCASE ASC, r.id DESC",
+        "rating_high": "r.rating DESC, r.id DESC",
+        "rating_low": "r.rating ASC, r.id DESC",
+    }.get(sort, "r.id DESC")
+    query = """
+        SELECT r.id, r.product_id, p.name AS product_name, p.slug AS product_slug,
+               r.rating, r.review, r.name, r.email, r.status, r.created_at,
+               EXISTS (
+                   SELECT 1 FROM users u
+                   JOIN orders o ON o.user_id = u.id
+                   JOIN order_items oi ON oi.order_id = o.id
+                   JOIN variant v ON CAST(v.id AS TEXT) = oi.product_id
+                                     OR (v.legacy_product_id != '' AND v.legacy_product_id = oi.product_id)
+                   WHERE lower(u.email) = lower(r.email)
+                     AND v.item_id = r.product_id
+                     AND (o.payment_status = 'paid' OR o.status = 'delivered')
+                     AND o.status NOT IN ('cancelled', 'refunded')
+               ) AS verified_purchase
+        FROM product_reviews r
+        LEFT JOIN items p ON p.id = r.product_id
+        WHERE 1=1
+    """
+    params: List[Any] = []
+    if search:
+        query += " AND (r.name LIKE ? OR r.email LIKE ? OR r.review LIKE ? OR p.name LIKE ?)"
+        term = f"%{search.strip()}%"
+        params.extend([term, term, term, term])
+    if product_id:
+        query += " AND r.product_id = ?"
+        params.append(product_id)
+    query += f" ORDER BY {sort_sql} LIMIT 500"
+    reviews = await fetch_all(query, tuple(params))
+    return {"ok": True, "reviews": [dict(row) for row in reviews], "count": len(reviews)}
+
 class UpdateOrderStatusPayload(BaseModel):
     status: str
     note: Optional[str] = ""

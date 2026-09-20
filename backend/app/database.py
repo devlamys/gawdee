@@ -469,7 +469,7 @@ CREATE TABLE IF NOT EXISTS subscribers (
 
 CREATE TABLE IF NOT EXISTS product_reviews (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    product_id TEXT NOT NULL,
+    product_id INTEGER NOT NULL,
     rating INTEGER NOT NULL,
     review TEXT NOT NULL,
     name TEXT NOT NULL,
@@ -477,7 +477,7 @@ CREATE TABLE IF NOT EXISTS product_reviews (
     status TEXT NOT NULL DEFAULT 'approved',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+    FOREIGN KEY (product_id) REFERENCES items(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS order_status_events (
@@ -818,12 +818,92 @@ async def migrate_domain_v4(db: aiosqlite.Connection) -> None:
     await db.commit()
 
 
+DOMAIN_SCHEMA_VERSION_V5 = 5
+
+
+async def migrate_product_reviews_v5(db: aiosqlite.Connection) -> None:
+    """Move reviews from legacy TEXT product ids to integer catalog item ids."""
+    async with db.execute("PRAGMA user_version") as cur:
+        row = await cur.fetchone()
+    if row and int(row[0]) >= DOMAIN_SCHEMA_VERSION_V5:
+        return
+    if not await _table_exists(db, "product_reviews"):
+        await db.execute(f"PRAGMA user_version = {DOMAIN_SCHEMA_VERSION_V5}")
+        await db.commit()
+        return
+
+    async with db.execute("PRAGMA table_info(product_reviews)") as cur:
+        columns = {str(r["name"]): str(r["type"] or "").upper() for r in await cur.fetchall()}
+    async with db.execute("PRAGMA foreign_key_list(product_reviews)") as cur:
+        foreign_keys = await cur.fetchall()
+    already_current = columns.get("product_id") == "INTEGER" and any(
+        str(r["table"]) == "items" and str(r["from"]) == "product_id" for r in foreign_keys
+    )
+    if already_current:
+        await db.execute(f"PRAGMA user_version = {DOMAIN_SCHEMA_VERSION_V5}")
+        await db.commit()
+        return
+
+    await db.executescript("""
+        CREATE TABLE IF NOT EXISTS product_reviews_unmapped (
+            id INTEGER PRIMARY KEY,
+            legacy_product_id TEXT NOT NULL,
+            rating INTEGER NOT NULL,
+            review TEXT NOT NULL,
+            name TEXT NOT NULL,
+            email TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            archived_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE product_reviews_v5 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id INTEGER NOT NULL,
+            rating INTEGER NOT NULL,
+            review TEXT NOT NULL,
+            name TEXT NOT NULL,
+            email TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'approved',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (product_id) REFERENCES items(id) ON DELETE CASCADE
+        );
+    """)
+    await db.execute("""
+        INSERT INTO product_reviews_v5 (id, product_id, rating, review, name, email, status, created_at, updated_at)
+        SELECT r.id, v.item_id, r.rating, r.review, r.name, r.email, r.status, r.created_at, r.updated_at
+        FROM product_reviews r
+        JOIN variant v ON CAST(v.id AS TEXT) = CAST(r.product_id AS TEXT)
+                           OR (v.legacy_product_id != '' AND v.legacy_product_id = CAST(r.product_id AS TEXT))
+        GROUP BY r.id
+    """)
+    await db.execute("""
+        INSERT OR REPLACE INTO product_reviews_unmapped
+            (id, legacy_product_id, rating, review, name, email, status, created_at, updated_at)
+        SELECT r.id, CAST(r.product_id AS TEXT), r.rating, r.review, r.name, r.email, r.status, r.created_at, r.updated_at
+        FROM product_reviews r
+        WHERE NOT EXISTS (
+            SELECT 1 FROM variant v
+            WHERE CAST(v.id AS TEXT) = CAST(r.product_id AS TEXT)
+               OR (v.legacy_product_id != '' AND v.legacy_product_id = CAST(r.product_id AS TEXT))
+        )
+    """)
+    await db.executescript("""
+        DROP TABLE product_reviews;
+        ALTER TABLE product_reviews_v5 RENAME TO product_reviews;
+    """)
+    await db.execute(f"PRAGMA user_version = {DOMAIN_SCHEMA_VERSION_V5}")
+    await db.commit()
+
+
 async def migrate(db: aiosqlite.Connection) -> None:
     """Run migrations — mirrors gawdee_migrate."""
     await migrate_domain_v2(db)
     await migrate_domain_v3(db)
     await migrate_domain_v4(db)
     await db.executescript(CREATE_TABLES_SQL)
+    await migrate_product_reviews_v5(db)
     for sql in CREATE_INDEXES_SQL:
         await db.execute(sql)
     await db.execute("PRAGMA optimize")
@@ -944,9 +1024,25 @@ async def get_product_by_slug(db: aiosqlite.Connection, slug: str) -> Optional[d
     return _cast_product(row) if row else None
 
 
-async def get_product_reviews(db: aiosqlite.Connection, product_id: str) -> list[dict]:
+async def get_product_reviews(db: aiosqlite.Connection, product_id: int) -> list[dict]:
     async with db.execute(
-        "SELECT id, product_id, rating, review, name, created_at FROM product_reviews WHERE product_id = ? AND status = 'approved' ORDER BY id DESC",
+        """
+        SELECT r.id, r.product_id, r.rating, r.review, r.name, r.created_at
+        FROM product_reviews r
+        WHERE r.product_id = ? AND r.status = 'approved'
+          AND EXISTS (
+              SELECT 1 FROM users u
+              JOIN orders o ON o.user_id = u.id
+              JOIN order_items oi ON oi.order_id = o.id
+              JOIN variant v ON CAST(v.id AS TEXT) = oi.product_id
+                                OR (v.legacy_product_id != '' AND v.legacy_product_id = oi.product_id)
+              WHERE lower(u.email) = lower(r.email)
+                AND v.item_id = r.product_id
+                AND (o.payment_status = 'paid' OR o.status = 'delivered')
+                AND o.status NOT IN ('cancelled', 'refunded')
+          )
+        ORDER BY r.id DESC
+        """,
         (product_id,),
     ) as cursor:
         rows = await cursor.fetchall()

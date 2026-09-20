@@ -115,7 +115,9 @@ export const api = {
   },
 
   // Reviews — backend shape: { id, product_id, rating, review, name, created_at }
-  submitReview: (payload: { product_id: string; name: string; email: string; review: string; rating: number }) =>
+  getReviewEligibility: (productId: number) =>
+    fetcher<{ ok: boolean; eligible: boolean; purchased: boolean; reviewed: boolean; customer: { name: string; email: string } }>(`/products/${productId}/review-eligibility`),
+  submitReview: (payload: { product_id: number; review: string; rating: number }) =>
     fetcher<{ ok: boolean; message: string; review: Review }>('/product-review', {
       method: 'POST',
       body: JSON.stringify(payload),
