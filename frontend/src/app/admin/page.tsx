@@ -132,6 +132,7 @@ function AdminPageContent() {  const searchParams = useSearchParams();
   const [orders, setOrders] = useState<any[]>([]);
   const [customerReviews, setCustomerReviews] = useState<any[]>([]);
   const [reels, setReels] = useState<any[]>([]);
+  const [offers, setOffers] = useState<any[]>([]);
   const [banners, setBanners] = useState<any[]>([]);
   const [bannersTwo, setBannersTwo] = useState<any[]>([]);
   const [testimonials, setTestimonials] = useState<any[]>([]);
@@ -305,6 +306,9 @@ function AdminPageContent() {  const searchParams = useSearchParams();
       } else if (view === 'reels') {
         const res = await adminApi.getReels();
         if (res?.ok) setReels(res.reels || []);
+      } else if (view === 'offers') {
+        const res = await adminApi.getOffers();
+        if (res?.ok) setOffers(res.offers || []);
       } else if (view === 'banners') {
         const res = await adminApi.getBanners();
         if (res?.ok) setBanners(res.banners || []);
@@ -1140,7 +1144,7 @@ function AdminPageContent() {  const searchParams = useSearchParams();
               className="admin-button admin-button--primary"
               type="button"
               onClick={() => {
-                setModalData({ title: '', file_path: '', product_slug: '', sort_order: 0 });
+                setModalData({ title: '', file_path: '', poster_path: '', external_url: '', product_slug: '', sort_order: 0 });
                 setActiveModal('reel');
               }}
             >
@@ -1223,6 +1227,102 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                 </div>
               </div>
             ))}
+          </div>
+        </section>
+      )}
+
+      {view === 'offers' && (
+        <section className="admin-card">
+          <div className="admin-card__head">
+            <div>
+              <h2>Hot Deals &amp; Offers ({offers.length})</h2>
+              <p>Manage homepage promo cards and dedicated offers page entries.</p>
+            </div>
+            <button
+              className="admin-button admin-button--primary"
+              type="button"
+              onClick={() => {
+                setModalData({
+                  title: '',
+                  subtitle: '',
+                  description: '',
+                  badge: 'HOT DEAL',
+                  image_url: '',
+                  link_url: '/products',
+                  cta_label: 'Shop now',
+                  sort_order: offers.length,
+                  is_active: true,
+                });
+                setActiveModal('offer');
+              }}
+            >
+              <i className="ph ph-plus"></i> Add Offer
+            </button>
+          </div>
+
+          <div className="admin-table-wrap" style={{ marginTop: '1rem' }}>
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Offer</th>
+                  <th>Badge</th>
+                  <th>Link</th>
+                  <th>Image</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {offers.map((offer) => (
+                  <tr key={offer.id}>
+                    <td>
+                      <strong>{offer.title || 'Untitled offer'}</strong>
+                      {offer.subtitle && <div style={{ color: '#009a84', fontSize: '0.74rem', marginTop: '4px' }}>{offer.subtitle}</div>}
+                    </td>
+                    <td>{offer.badge || 'HOT DEAL'}</td>
+                    <td style={{ maxWidth: '220px', wordBreak: 'break-word' }}>{offer.link_url || '/products'}</td>
+                    <td>
+                      {offer.image_url ? (
+                        <img
+                          src={offer.image_url.startsWith('http') ? offer.image_url : `/${offer.image_url.replace(/^\//, '')}`}
+                          alt={offer.title || 'Offer'}
+                          style={{ width: '56px', height: '56px', objectFit: 'cover', borderRadius: '10px', border: '1px solid #e1e7e2', background: '#f6f8f6' }}
+                        />
+                      ) : (
+                        <span style={{ color: '#999', fontSize: '0.8rem' }}>No image</span>
+                      )}
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button
+                          type="button"
+                          title="Edit offer"
+                          onClick={() => {
+                            setModalData({ ...offer });
+                            setActiveModal('offer');
+                          }}
+                          className="admin-action-icon"
+                        >
+                          <i className="ph ph-pencil-simple"></i>
+                        </button>
+                        <button
+                          type="button"
+                          title="Delete offer"
+                          onClick={async () => {
+                            if (confirm('Delete this offer?')) {
+                              await adminApi.deleteOffer(offer.id);
+                              loadViewData();
+                            }
+                          }}
+                          className="admin-action-icon admin-action-icon--danger"
+                        >
+                          <i className="ph ph-trash"></i>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
       )}
@@ -2122,7 +2222,7 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                   {modalData.id ? `Edit Reel: ${modalData.title}` : 'New Reel'}
                 </h3>
                 <p style={{ margin: '4px 0 0', fontSize: '0.72rem', color: '#7b8981' }}>
-                  Instagram-style video clips linking to catalog products.
+                  Add a reel/video preview, a thumbnail image, and the full video destination.
                 </p>
               </div>
               <button
@@ -2204,6 +2304,57 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                       />
                     </label>
                   </div>
+                  <small style={{ display: 'block', color: '#6b7a73', marginTop: '6px', lineHeight: 1.5 }}>
+                    Upload the short video clip used for the muted autoplay preview on the reels page. This is the preview section, not the full video destination.
+                  </small>
+                </label>
+
+                <label>
+                  <span>Thumbnail / Poster Image</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="text"
+                      placeholder="/assets/uploads/... or upload"
+                      value={modalData.poster_path || ''}
+                      onChange={(e) => setModalData({ ...modalData, poster_path: e.target.value })}
+                      style={{ flex: 1 }}
+                    />
+                    <label
+                      className="admin-button admin-button--ghost"
+                      style={{ whiteSpace: 'nowrap', cursor: 'pointer', padding: '9px 12px' }}
+                    >
+                      <i className="ph ph-upload-simple"></i> Upload
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleUploadImage(file, (url) => {
+                              setModalData((prev: any) => ({ ...prev, poster_path: url }));
+                            }, 'reels');
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <small style={{ display: 'block', color: '#6b7a73', marginTop: '6px', lineHeight: 1.5 }}>
+                    This is the cover image shown before the video preview plays. It is the static thumbnail users see in the reel card.
+                  </small>
+                </label>
+
+                <label>
+                  <span>Full Video Link (Instagram / YouTube / other)</span>
+                  <input
+                    type="url"
+                    placeholder="https://www.instagram.com/... or https://youtu.be/..."
+                    value={modalData.external_url || ''}
+                    onChange={(e) => setModalData({ ...modalData, external_url: e.target.value })}
+                  />
+                  <small style={{ display: 'block', color: '#6b7a73', marginTop: '6px', lineHeight: 1.5 }}>
+                    This is the full original video page. When a user clicks the reel, they are taken here to watch the complete video on Instagram, YouTube, or the source platform.
+                  </small>
                 </label>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
@@ -2215,6 +2366,9 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                       value={modalData.product_slug || ''}
                       onChange={(e) => setModalData({ ...modalData, product_slug: e.target.value })}
                     />
+                    <small style={{ display: 'block', color: '#6b7a73', marginTop: '6px', lineHeight: 1.5 }}>
+                      Optional: if filled, the reel opens that product page instead of the external video link.
+                    </small>
                   </label>
                   <label>
                     <span>Sort Order</span>
@@ -2224,6 +2378,9 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                       value={modalData.sort_order ?? 0}
                       onChange={(e) => setModalData({ ...modalData, sort_order: parseInt(e.target.value) || 0 })}
                     />
+                    <small style={{ display: 'block', color: '#6b7a73', marginTop: '6px', lineHeight: 1.5 }}>
+                      Controls the order of reels on the page. Lower numbers appear first.
+                    </small>
                   </label>
                 </div>
 
@@ -2251,6 +2408,213 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                   disabled={uploadingImage}
                 >
                   <i className="ph ph-check"></i> {modalData.id ? 'Update Reel' : 'Create Reel'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {activeModal === 'offer' && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.6)',
+            zIndex: 99999,
+            display: 'grid',
+            placeItems: 'center',
+            padding: '20px',
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '20px',
+              maxWidth: '620px',
+              width: '100%',
+              maxHeight: '92vh',
+              overflowY: 'auto',
+              padding: '28px',
+              boxShadow: '0 25px 60px rgba(0,0,0,0.22)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '14px', borderBottom: '1px solid #e1e7e2' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#005c4e' }}>
+                  {modalData.id ? `Edit Offer: ${modalData.title}` : 'New Offer'}
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '0.72rem', color: '#7b8981' }}>
+                  Add a promo card that shows on the homepage and dedicated offers page.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveModal(null)}
+                style={{ background: '#f0f4f2', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'grid', placeItems: 'center', fontSize: '1.1rem', cursor: 'pointer', color: '#445', flexShrink: 0 }}
+              >
+                <i className="ph ph-x"></i>
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  const title = (modalData.title || '').trim();
+                  if (!title) throw new Error('Offer title is required.');
+                  await adminApi.saveOffer({
+                    id: modalData.id || undefined,
+                    title,
+                    subtitle: modalData.subtitle || '',
+                    description: modalData.description || '',
+                    badge: modalData.badge || 'HOT DEAL',
+                    image_url: modalData.image_url || '',
+                    link_url: modalData.link_url || '/products',
+                    cta_label: modalData.cta_label || 'Shop now',
+                    sort_order: Math.max(0, parseInt(modalData.sort_order ?? 0) || 0),
+                    is_active: modalData.is_active !== false,
+                  });
+                  showFlash(modalData.id ? 'Offer updated successfully' : 'Offer created successfully');
+                  setActiveModal(null);
+                  loadViewData();
+                } catch (err) {
+                  showFlash(err instanceof Error ? err.message : 'Failed to save offer', 'error');
+                }
+              }}
+              className="admin-form"
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <label>
+                  <span>Offer Title *</span>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Save 25% on wellness essentials"
+                    value={modalData.title || ''}
+                    onChange={(e) => setModalData({ ...modalData, title: e.target.value })}
+                  />
+                </label>
+
+                <label>
+                  <span>Subtitle</span>
+                  <input
+                    type="text"
+                    placeholder="e.g. Family combo savings"
+                    value={modalData.subtitle || ''}
+                    onChange={(e) => setModalData({ ...modalData, subtitle: e.target.value })}
+                  />
+                </label>
+
+                <label>
+                  <span>Description</span>
+                  <textarea
+                    rows={4}
+                    placeholder="Short description shown on offer cards"
+                    value={modalData.description || ''}
+                    onChange={(e) => setModalData({ ...modalData, description: e.target.value })}
+                  />
+                </label>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <label>
+                    <span>Badge</span>
+                    <input
+                      type="text"
+                      placeholder="HOT DEAL"
+                      value={modalData.badge || ''}
+                      onChange={(e) => setModalData({ ...modalData, badge: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>CTA label</span>
+                    <input
+                      type="text"
+                      placeholder="Shop now"
+                      value={modalData.cta_label || ''}
+                      onChange={(e) => setModalData({ ...modalData, cta_label: e.target.value })}
+                    />
+                  </label>
+                </div>
+
+                <label>
+                  <span>Image URL</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="text"
+                      placeholder="/assets/uploads/... or upload"
+                      value={modalData.image_url || ''}
+                      onChange={(e) => setModalData({ ...modalData, image_url: e.target.value })}
+                      style={{ flex: 1 }}
+                    />
+                    <label
+                      className="admin-button admin-button--ghost"
+                      style={{ whiteSpace: 'nowrap', cursor: 'pointer', padding: '9px 12px' }}
+                    >
+                      <i className="ph ph-upload-simple"></i> Upload
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleUploadImage(file, (url) => {
+                              setModalData((prev: any) => ({ ...prev, image_url: url }));
+                            }, 'offers');
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </label>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <label>
+                    <span>Link URL</span>
+                    <input
+                      type="text"
+                      placeholder="/products or https://..."
+                      value={modalData.link_url || ''}
+                      onChange={(e) => setModalData({ ...modalData, link_url: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>Sort Order</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={modalData.sort_order ?? 0}
+                      onChange={(e) => setModalData({ ...modalData, sort_order: parseInt(e.target.value) || 0 })}
+                    />
+                  </label>
+                </div>
+
+                <label className="form-switch" style={{ padding: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={modalData.is_active !== false}
+                    onChange={(e) => setModalData({ ...modalData, is_active: e.target.checked })}
+                  />
+                  <span>Offer is visible in storefront</span>
+                </label>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                <button
+                  type="button"
+                  className="admin-button admin-button--ghost"
+                  onClick={() => setActiveModal(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="admin-button admin-button--primary"
+                  disabled={uploadingImage}
+                >
+                  <i className="ph ph-check"></i> {modalData.id ? 'Update Offer' : 'Create Offer'}
                 </button>
               </div>
             </form>

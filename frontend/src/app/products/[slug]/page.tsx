@@ -360,12 +360,12 @@ export default function ProductDetailPage() {
 
           {/* Right: Details (Interactive) */}
           <div className="pv-details">
+            <h1 className="pv-title">{displayTitle || 'MULTIVITAMIN GUMMIES\nFOR ADULTS'}</h1>
+
             <div className="pv-social-proof">
               <span className="pv-stars">★★★★★</span>
               <span className="pv-reviews-count">{reviews.length > 0 ? `4.8 (${reviews.length}+ Reviews)` : '2,842+ Reviews'}</span>
             </div>
-
-            <h1 className="pv-title">{displayTitle || 'MULTIVITAMIN GUMMIES\nFOR ADULTS'}</h1>
 
             <div className="pv-benefit-icons">
               <div className="pv-bicon"><i className="ph ph-leaf"></i></div>
