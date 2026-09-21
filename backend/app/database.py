@@ -594,6 +594,8 @@ CREATE TABLE IF NOT EXISTS loyalty_order_lines (
     eligible_paise INTEGER NOT NULL CHECK(eligible_paise >= 0),
     redeemable_paise INTEGER NOT NULL CHECK(redeemable_paise >= 0),
     multiplier INTEGER NOT NULL DEFAULT 1 CHECK(multiplier BETWEEN 1 AND 20),
+    pack_bonus_coins INTEGER NOT NULL DEFAULT 0 CHECK(pack_bonus_coins >= 0),
+    purchase_plan TEXT NOT NULL DEFAULT 'one_time',
     redeemed_coins_allocated INTEGER NOT NULL DEFAULT 0,
     refunded_quantity INTEGER NOT NULL DEFAULT 0,
     restored_coins INTEGER NOT NULL DEFAULT 0,
@@ -630,6 +632,15 @@ CREATE TABLE IF NOT EXISTS loyalty_product_rules (
     redeem_excluded INTEGER NOT NULL DEFAULT 0,
     multiplier INTEGER NOT NULL DEFAULT 1 CHECK(multiplier BETWEEN 1 AND 20),
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS loyalty_pack_bonuses (
+    variant_id INTEGER NOT NULL REFERENCES variant(id) ON DELETE RESTRICT,
+    pack_quantity INTEGER NOT NULL CHECK(pack_quantity BETWEEN 1 AND 3),
+    purchase_plan TEXT NOT NULL CHECK(purchase_plan IN ('one_time','monthly','two_months')),
+    bonus_coins INTEGER NOT NULL CHECK(bonus_coins BETWEEN 0 AND 1000000),
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (variant_id, pack_quantity, purchase_plan)
 );
 
 CREATE TABLE IF NOT EXISTS loyalty_category_rules (
@@ -1190,6 +1201,12 @@ async def migrate(db: aiosqlite.Connection) -> None:
     await migrate_combos_v6(db)
     await migrate_loyalty_v6(db)
     await migrate_consent_v7(db)
+    for column, ddl in {
+        "pack_bonus_coins": "INTEGER NOT NULL DEFAULT 0 CHECK(pack_bonus_coins >= 0)",
+        "purchase_plan": "TEXT NOT NULL DEFAULT 'one_time'",
+    }.items():
+        if not await _column_exists(db, "loyalty_order_lines", column):
+            await db.execute(f"ALTER TABLE loyalty_order_lines ADD COLUMN {column} {ddl}")
     for sql in CREATE_INDEXES_SQL:
         await db.execute(sql)
     await db.execute("PRAGMA optimize")

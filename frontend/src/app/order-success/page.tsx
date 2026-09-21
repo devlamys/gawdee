@@ -7,6 +7,8 @@ import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
 import { Order } from '@/types';
 import { formatOrderTotal } from '@/lib/loyalty';
+import { consumeOrderCelebration } from '@/lib/order-celebration';
+import { OrderCelebration } from '@/components/OrderCelebration';
 
 function OrderSuccessContent() {
   const searchParams = useSearchParams();
@@ -14,7 +16,15 @@ function OrderSuccessContent() {
   const { customer } = useAuth();
 
   const [order, setOrder] = useState<Order | null>(null);
-  const [loading, setLoading] = useState(Boolean(orderNumber && customer));
+  const [celebrate, setCelebrate] = useState(false);
+
+  useEffect(() => {
+    if (!orderNumber) return;
+    const frame = window.requestAnimationFrame(() => {
+      if (consumeOrderCelebration(orderNumber)) setCelebrate(true);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [orderNumber]);
 
   useEffect(() => {
     if (orderNumber && customer) {
@@ -24,13 +34,13 @@ function OrderSuccessContent() {
             setOrder(res.order);
           }
         })
-        .catch(() => {})
-        .finally(() => setLoading(false));
+        .catch(() => {});
     }
   }, [orderNumber, customer]);
 
   return (
     <section className="order-success-shell" style={{ padding: '4rem 1rem 7rem', textAlign: 'center' }}>
+      {celebrate && <OrderCelebration />}
       <div
         className="order-success-card"
         style={{
@@ -44,7 +54,7 @@ function OrderSuccessContent() {
         }}
       >
         <span
-          className="order-success-icon"
+          className={celebrate ? 'order-success-icon order-success-icon--celebrating' : 'order-success-icon'}
           style={{
             width: '64px',
             height: '64px',

@@ -70,8 +70,10 @@ export default function ProductDetailPage() {
   const [quantity, setQuantity] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [purchaseType, setPurchaseType] = useState('subscribe');
+  const [purchaseType, setPurchaseType] = useState<'one_time' | 'subscribe'>('subscribe');
   const [deliveryFreq, setDeliveryFreq] = useState('1 month');
+  const [packOffers, setPackOffers] = useState<Array<{ pack_quantity: number; purchase_plan: 'one_time' | 'monthly' | 'two_months'; base_coins: number; bonus_coins: number; estimated_coins: number }>>([]);
+  const [packOffersLoading, setPackOffersLoading] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -152,6 +154,27 @@ export default function ProductDetailPage() {
   useEffect(() => () => {
     if (notifyTimer.current) clearTimeout(notifyTimer.current);
   }, []);
+
+  const selectedPlan = purchaseType === 'subscribe'
+    ? (deliveryFreq === '2 months' ? 'two_months' : 'monthly')
+    : 'one_time';
+
+  useEffect(() => {
+    if (!selected?.id) return;
+    let cancelled = false;
+    setPackOffersLoading(true);
+    api.loyalty.getPackOffers(selected.id)
+      .then((res) => {
+        if (!cancelled && res.ok) setPackOffers(res.offers || []);
+      })
+      .catch(() => {
+        if (!cancelled) setPackOffers([]);
+      })
+      .finally(() => {
+        if (!cancelled) setPackOffersLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [selected?.id]);
 
   useEffect(() => {
     if (!slug) return;
@@ -268,7 +291,7 @@ export default function ProductDetailPage() {
   const handleAddToCart = () => {
     if (!available) return;
     addItem(
-      variantCartLine(item, selected),
+      { ...variantCartLine(item, selected), purchase_plan: selectedPlan },
       quantity,
       true
     );
@@ -431,9 +454,10 @@ export default function ProductDetailPage() {
 
             <div className="pv-pack-size">
               <span className="pv-label">Select Quantity:</span>
-              <div className="pv-qty-grid">
-                 {[1, 2, 3].map(q => {
-                   const coins = q === 1 ? 'Earn 125' : q === 2 ? 'Earn 310' : 'Earn 655';
+              <div className="pv-qty-grid" key={selectedPlan}>
+                 {[1, 2, 3].map((q) => {
+                   const offer = packOffers.find((entry) => entry.pack_quantity === q && entry.purchase_plan === selectedPlan);
+                   const coins = offer ? `Earn ${offer.estimated_coins}` : 'Earn 0';
                    return (
                      <button 
                        key={q}
@@ -441,12 +465,30 @@ export default function ProductDetailPage() {
                        className={`pv-qty-btn ${quantity === q ? 'active' : ''}`}
                        onClick={() => setQuantity(q)}
                      >
-                       <span className="pv-coin-badge"><i className="ph-fill ph-coin" style={{marginRight: 3}}></i>{coins}</span>
+                       <span className="pv-coin-badge"><i className="ph-fill ph-coin" style={{marginRight: 3}}></i>{packOffersLoading ? '…' : coins}</span>
                        {q}-PACK
                      </button>
                    );
                  })}
               </div>
+              {(() => {
+                if (packOffersLoading || packOffers.length === 0) return null;
+                const hasSubscribeBonus = [1, 2, 3].some((q) => {
+                  const oneTime = packOffers.find((e) => e.pack_quantity === q && e.purchase_plan === 'one_time')?.estimated_coins ?? 0;
+                  const monthly = packOffers.find((e) => e.pack_quantity === q && e.purchase_plan === 'monthly')?.estimated_coins ?? 0;
+                  const twoMonths = packOffers.find((e) => e.pack_quantity === q && e.purchase_plan === 'two_months')?.estimated_coins ?? 0;
+                  return monthly > oneTime || twoMonths > oneTime;
+                });
+                if (!hasSubscribeBonus) return null;
+                return (
+                  <p className="pv-subscribe-hint">
+                    <i className="ph-fill ph-coin" style={{ marginRight: 4, color: '#c78d1f' }} />
+                    {selectedPlan === 'one_time'
+                      ? 'Subscribe & Save earns more coins on every delivery'
+                      : 'You\'re earning extra coins with your subscription ✓'}
+                  </p>
+                );
+              })()}
             </div>
 
             <div className="pv-purchase-options">
@@ -456,9 +498,9 @@ export default function ProductDetailPage() {
                    <input 
                      type="radio" 
                      name="purchase_type" 
-                     value="onetime" 
-                     checked={purchaseType === 'onetime'}
-                     onChange={() => setPurchaseType('onetime')}
+                     value="one_time" 
+                     checked={purchaseType === 'one_time'}
+                     onChange={() => setPurchaseType('one_time')}
                    />
                    <div className="pv-po-radio-content">
                       <div className="pv-po-row">

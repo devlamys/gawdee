@@ -10,6 +10,7 @@ import { money, resolveImageUrl } from '@/lib/utils';
 import { env } from '@/config/env';
 import { LoyaltyRedemptionQuote, LoyaltyWallet } from '@/types';
 import { formatCoins, formatPaise } from '@/lib/loyalty';
+import { markOrderForCelebration } from '@/lib/order-celebration';
 import Script from 'next/script';
 
 declare global {
@@ -201,7 +202,7 @@ export default function CheckoutPage() {
         loyalty_coins: appliedLoyaltyQuote?.discount_paise ?? 0,
         payment_method: paymentMethod,
         checkout_token: checkoutToken,
-        items: items.map((i) => ({ id: i.id, quantity: i.quantity })),
+        items: items.map((i) => ({ id: i.id, quantity: i.quantity, purchase_plan: i.purchase_plan || 'one_time' })),
       };
 
       const res = await api.createOrder(orderPayload);
@@ -212,6 +213,7 @@ export default function CheckoutPage() {
       if (paymentMethod === 'cod') {
         clearCart();
         setCheckoutToken(generateCheckoutToken());
+        markOrderForCelebration(res.order_number);
         router.push(`/order-success?order=${res.order_number}`);
         return;
       }
@@ -223,6 +225,7 @@ export default function CheckoutPage() {
         if (res.already_paid) {
           clearCart();
           setCheckoutToken(generateCheckoutToken());
+          markOrderForCelebration(res.order_number);
           router.push(`/order-success?order=${res.order_number}`);
           return;
         }
@@ -260,6 +263,7 @@ export default function CheckoutPage() {
               if (verifyRes.ok) {
                 clearCart();
                 setCheckoutToken(generateCheckoutToken());
+                markOrderForCelebration(res.order_number);
                 router.push(`/order-success?order=${res.order_number}`);
               } else {
                 setErrorMsg('Payment verification failed. Please contact support.');

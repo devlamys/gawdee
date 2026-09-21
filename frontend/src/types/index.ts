@@ -39,6 +39,7 @@ export interface CartItem {
   variant_name?: string;
   uom?: string;
   sku?: string;
+  purchase_plan?: 'one_time' | 'monthly' | 'two_months';
 }
 
 // ── Canonical catalog DTOs (Phase 3 /api/catalog/*, camelCase) ─────────────

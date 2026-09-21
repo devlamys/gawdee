@@ -127,6 +127,9 @@ async def checkout_pricing(db: aiosqlite.Connection, requested_items: list[dict]
             # stock gated by the scarcest backing product.
             product = await resolve_combo_product(db, prod_id)
         quantity = min(settings.CHECKOUT_MAX_QTY, max(1, int(req.get("quantity") or req.get("qty") or 1)))
+        purchase_plan = str(req.get("purchase_plan") or "one_time")
+        if purchase_plan not in ("one_time", "monthly", "two_months"):
+            raise ValueError("Choose a valid purchase option.")
         if not product:
             raise ValueError("A product in the cart is no longer available.")
         if int(product["price"]) <= 0:
@@ -139,7 +142,7 @@ async def checkout_pricing(db: aiosqlite.Connection, requested_items: list[dict]
             available = int(product.get("stock", 0))
         if available < quantity:
             raise ValueError(f"{product['name']} does not have enough stock for that quantity.")
-        items.append({"product": product, "quantity": quantity})
+        items.append({"product": product, "quantity": quantity, "purchase_plan": purchase_plan})
         subtotal += int(product["price"]) * quantity
 
     coupon_code = coupon_code.upper().strip()
@@ -319,7 +322,7 @@ async def _create_local_order_locked(
             line_snapshot = line_pricing["lines"][line_index]
             if line_snapshot and user_id is not None:
                 await db.execute(
-                    "INSERT INTO loyalty_order_lines (order_item_id, order_id, customer_id, quantity, gross_paise, coupon_discount_paise, eligible_paise, redeemable_paise, redeemed_coins_allocated, multiplier, earn_excluded, redeem_excluded) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO loyalty_order_lines (order_item_id, order_id, customer_id, quantity, gross_paise, coupon_discount_paise, eligible_paise, redeemable_paise, redeemed_coins_allocated, multiplier, pack_bonus_coins, purchase_plan, earn_excluded, redeem_excluded) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         item_id,
                         order_id,
@@ -331,6 +334,8 @@ async def _create_local_order_locked(
                         int(line_snapshot.get("redeemable_paise", 0)),
                         int(redeemed_allocations[line_index]),
                         int(line_snapshot.get("multiplier", 1)),
+                        int(line_snapshot.get("pack_bonus_coins", 0)),
+                        str(line_snapshot.get("purchase_plan", "one_time")),
                         int(1 if line_snapshot.get("earn_excluded") else 0),
                         int(1 if line_snapshot.get("redeem_excluded") else 0),
                     ),

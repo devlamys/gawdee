@@ -9,8 +9,10 @@ import {
   type LoyaltyAdminWallet,
   type LoyaltyCategoryRestriction,
   type LoyaltyProductRestriction,
+  type LoyaltyPackBonusRule,
   type LoyaltyRestrictions,
 } from '@/lib/admin-api';
+import type { CatalogItem } from '@/types';
 import './loyalty.css';
 
 type Notice = { kind: 'success' | 'error'; text: string };
@@ -79,6 +81,9 @@ export default function AdminLoyaltyPage() {
   const [minCartInput, setMinCartInput] = useState('0.00');
   const [reports, setReports] = useState<LoyaltyAdminReports | null>(null);
   const [restrictions, setRestrictions] = useState<LoyaltyRestrictions | null>(null);
+  const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
+  const [packRules, setPackRules] = useState<LoyaltyPackBonusRule[]>([]);
+  const [bonusVariantId, setBonusVariantId] = useState('');
   const [wallets, setWallets] = useState<LoyaltyAdminWallet[]>([]);
   const [wallet, setWallet] = useState<LoyaltyAdminWallet | null>(null);
   const [transactions, setTransactions] = useState<LoyaltyAdminTransaction[]>([]);
@@ -109,9 +114,11 @@ export default function AdminLoyaltyPage() {
       adminApi.getLoyaltySettings(),
       adminApi.getLoyaltyReports(),
       adminApi.getLoyaltyRestrictions(),
+      adminApi.catalogAdminItems(),
+      adminApi.getLoyaltyPackBonuses(),
     ]).then((results) => {
       if (!live) return;
-      const [settingsResult, reportsResult, restrictionsResult] = results;
+      const [settingsResult, reportsResult, restrictionsResult, catalogResult, packResult] = results;
       if (settingsResult.status === 'fulfilled' && settingsResult.value.ok) {
         setSettings(settingsResult.value.settings);
         setMinCartInput(paiseToInput(settingsResult.value.settings.min_cart_paise));
@@ -120,6 +127,10 @@ export default function AdminLoyaltyPage() {
       if (restrictionsResult.status === 'fulfilled' && restrictionsResult.value.ok) {
         setRestrictions({ products: restrictionsResult.value.products || [], categories: restrictionsResult.value.categories || [] });
       }
+      if (catalogResult.status === 'fulfilled' && catalogResult.value.ok) {
+        setCatalogItems(catalogResult.value.items || []);
+      }
+      if (packResult.status === 'fulfilled' && packResult.value.ok) setPackRules(packResult.value.rules || []);
       const failure = results.find((result) => result.status === 'rejected');
       if (failure?.status === 'rejected') setNotice({ kind: 'error', text: failure.reason?.message || 'Some loyalty data could not be loaded.' });
       setLoading(false);
@@ -224,10 +235,10 @@ export default function AdminLoyaltyPage() {
     event.preventDefault();
     if (!restrictions) return;
     const invalid = [...restrictions.products, ...restrictions.categories].some((row) =>
-      !Number.isSafeInteger(row.multiplier) || row.multiplier < 0 || row.multiplier > 100
+      !Number.isSafeInteger(row.multiplier) || row.multiplier < 1 || row.multiplier > 20
     );
     if (invalid) {
-      setNotice({ kind: 'error', text: 'Each multiplier must be a whole number from 0 to 100.' });
+      setNotice({ kind: 'error', text: 'Each multiplier must be a whole number from 1 to 20.' });
       return;
     }
     setBusy('restrictions');
@@ -248,6 +259,43 @@ export default function AdminLoyaltyPage() {
     if (restrictions.products.some((row) => row.product_id === id)) return;
     setRestrictions({ ...restrictions, products: [...restrictions.products, { product_id: id, earn_excluded: false, redeem_excluded: false, multiplier: 1 }] });
     setNewProductId('');
+  }
+
+  function productLabel(variantId: number): string {
+    for (const item of catalogItems) {
+      const variant = item.variants.find((entry) => entry.id === variantId);
+      if (variant) return `${item.name} — ${variant.variantName}`;
+    }
+    return `Variant #${variantId}`;
+  }
+
+  function bonusFor(variantId: number, quantity: 1 | 2 | 3, plan: LoyaltyPackBonusRule['purchase_plan']): number {
+    return packRules.find((rule) => rule.variant_id === variantId && rule.pack_quantity === quantity && rule.purchase_plan === plan)?.bonus_coins ?? 0;
+  }
+
+  function updatePackBonus(variantId: number, quantity: 1 | 2 | 3, plan: LoyaltyPackBonusRule['purchase_plan'], value: number) {
+    setPackRules((current) => [
+      ...current.filter((rule) => !(rule.variant_id === variantId && rule.pack_quantity === quantity && rule.purchase_plan === plan)),
+      { variant_id: variantId, pack_quantity: quantity, purchase_plan: plan, bonus_coins: value },
+    ]);
+  }
+
+  async function savePackBonuses(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (packRules.some((rule) => !Number.isSafeInteger(rule.bonus_coins) || rule.bonus_coins < 0 || rule.bonus_coins > 1_000_000)) {
+      setNotice({ kind: 'error', text: 'Bonus coins must be whole numbers from 0 to 1,000,000.' });
+      return;
+    }
+    setBusy('pack-bonuses');
+    try {
+      const response = await adminApi.saveLoyaltyPackBonuses(packRules);
+      setPackRules(response.rules || []);
+      setNotice({ kind: 'success', text: 'Pack and purchase option bonuses saved.' });
+    } catch (error) {
+      setNotice({ kind: 'error', text: error instanceof Error ? error.message : 'Unable to save pack bonuses.' });
+    } finally {
+      setBusy(null);
+    }
   }
 
   function addCategoryRestriction() {
@@ -357,14 +405,131 @@ export default function AdminLoyaltyPage() {
         <div className="admin-card__head"><div><h2 id="loyalty-restrictions-heading">Product and category rules</h2><p>Exclude earning or redemption, or set an integer earning multiplier.</p></div></div>
         <form className="admin-form admin-card__body" onSubmit={saveRestrictions}>
           <h3>Products</h3>
-          <div className="loyalty-search"><input aria-label="Product ID" type="number" min="1" step="1" placeholder="Product ID" value={newProductId} onChange={(event) => setNewProductId(event.target.value)} /><button className="admin-button admin-button--secondary" type="button" onClick={addProductRestriction}>Add product</button></div>
-          <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Product ID</th><th>Exclude earning</th><th>Exclude redemption</th><th>Earn multiplier</th><th /></tr></thead><tbody>{restrictions.products.length ? restrictions.products.map((row) => <tr key={row.product_id}><td>{row.product_id}</td><td><input type="checkbox" aria-label={`Exclude earning for product ${row.product_id}`} checked={row.earn_excluded} onChange={(event) => updateProduct(row.product_id, { earn_excluded: event.target.checked })} /></td><td><input type="checkbox" aria-label={`Exclude redemption for product ${row.product_id}`} checked={row.redeem_excluded} onChange={(event) => updateProduct(row.product_id, { redeem_excluded: event.target.checked })} /></td><td><input className="loyalty-multiplier" type="number" aria-label={`Earn multiplier for product ${row.product_id}`} min="0" max="100" step="1" value={row.multiplier} onChange={(event) => updateProduct(row.product_id, { multiplier: Number(event.target.value) })} /></td><td><button className="admin-button admin-button--ghost" type="button" onClick={() => setRestrictions({ ...restrictions, products: restrictions.products.filter((item) => item.product_id !== row.product_id) })}>Remove</button></td></tr>) : <tr className="admin-table__empty"><td colSpan={5}>No product overrides.</td></tr>}</tbody></table></div>
+          <div className="loyalty-search"><select aria-label="Choose product and variant" value={newProductId} onChange={(event) => setNewProductId(event.target.value)}><option value="">Choose product and variant</option>{catalogItems.map((item) => <optgroup key={item.id} label={item.name}>{item.variants.map((variant) => <option key={variant.id} value={variant.id}>{variant.variantName}{variant.isActive === 0 ? ' (inactive)' : ''}</option>)}</optgroup>)}</select><button className="admin-button admin-button--secondary" type="button" disabled={!newProductId} onClick={addProductRestriction}>Add product</button></div>
+          <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Product / variant</th><th>Exclude earning</th><th>Exclude redemption</th><th>Earn multiplier</th><th /></tr></thead><tbody>{restrictions.products.length ? restrictions.products.map((row) => <tr key={row.product_id}><td>{productLabel(row.product_id)}</td><td><input type="checkbox" aria-label={`Exclude earning for ${productLabel(row.product_id)}`} checked={row.earn_excluded} onChange={(event) => updateProduct(row.product_id, { earn_excluded: event.target.checked })} /></td><td><input type="checkbox" aria-label={`Exclude redemption for ${productLabel(row.product_id)}`} checked={row.redeem_excluded} onChange={(event) => updateProduct(row.product_id, { redeem_excluded: event.target.checked })} /></td><td><input className="loyalty-multiplier" type="number" aria-label={`Earn multiplier for ${productLabel(row.product_id)}`} min="1" max="20" step="1" value={row.multiplier} onChange={(event) => updateProduct(row.product_id, { multiplier: Number(event.target.value) })} /></td><td><button className="admin-button admin-button--ghost" type="button" onClick={() => setRestrictions({ ...restrictions, products: restrictions.products.filter((item) => item.product_id !== row.product_id) })}>Remove</button></td></tr>) : <tr className="admin-table__empty"><td colSpan={5}>No product overrides.</td></tr>}</tbody></table></div>
           <h3>Categories</h3>
           <div className="loyalty-search"><input aria-label="Category key" placeholder="Category key" value={newCategoryKey} onChange={(event) => setNewCategoryKey(event.target.value)} /><button className="admin-button admin-button--secondary" type="button" onClick={addCategoryRestriction}>Add category</button></div>
-          <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Category key</th><th>Exclude earning</th><th>Exclude redemption</th><th>Earn multiplier</th><th /></tr></thead><tbody>{restrictions.categories.length ? restrictions.categories.map((row) => <tr key={row.category_key}><td>{row.category_key}</td><td><input type="checkbox" aria-label={`Exclude earning for category ${row.category_key}`} checked={row.earn_excluded} onChange={(event) => updateCategory(row.category_key, { earn_excluded: event.target.checked })} /></td><td><input type="checkbox" aria-label={`Exclude redemption for category ${row.category_key}`} checked={row.redeem_excluded} onChange={(event) => updateCategory(row.category_key, { redeem_excluded: event.target.checked })} /></td><td><input className="loyalty-multiplier" type="number" aria-label={`Earn multiplier for category ${row.category_key}`} min="0" max="100" step="1" value={row.multiplier} onChange={(event) => updateCategory(row.category_key, { multiplier: Number(event.target.value) })} /></td><td><button className="admin-button admin-button--ghost" type="button" onClick={() => setRestrictions({ ...restrictions, categories: restrictions.categories.filter((item) => item.category_key !== row.category_key) })}>Remove</button></td></tr>) : <tr className="admin-table__empty"><td colSpan={5}>No category overrides.</td></tr>}</tbody></table></div>
+          <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Category key</th><th>Exclude earning</th><th>Exclude redemption</th><th>Earn multiplier</th><th /></tr></thead><tbody>{restrictions.categories.length ? restrictions.categories.map((row) => <tr key={row.category_key}><td>{row.category_key}</td><td><input type="checkbox" aria-label={`Exclude earning for category ${row.category_key}`} checked={row.earn_excluded} onChange={(event) => updateCategory(row.category_key, { earn_excluded: event.target.checked })} /></td><td><input type="checkbox" aria-label={`Exclude redemption for category ${row.category_key}`} checked={row.redeem_excluded} onChange={(event) => updateCategory(row.category_key, { redeem_excluded: event.target.checked })} /></td><td><input className="loyalty-multiplier" type="number" aria-label={`Earn multiplier for category ${row.category_key}`} min="1" max="20" step="1" value={row.multiplier} onChange={(event) => updateCategory(row.category_key, { multiplier: Number(event.target.value) })} /></td><td><button className="admin-button admin-button--ghost" type="button" onClick={() => setRestrictions({ ...restrictions, categories: restrictions.categories.filter((item) => item.category_key !== row.category_key) })}>Remove</button></td></tr>) : <tr className="admin-table__empty"><td colSpan={5}>No category overrides.</td></tr>}</tbody></table></div>
           <div><button className="admin-button admin-button--primary" type="submit" disabled={busy === 'restrictions'}>{busy === 'restrictions' ? 'Saving…' : 'Save product and category rules'}</button></div>
         </form>
       </section>}
+
+      <section className="admin-card" aria-labelledby="loyalty-pack-heading">
+        <div className="admin-card__head"><div><h2 id="loyalty-pack-heading">Pack and purchase option coins</h2><p>Set bonus coins for each pack size and purchase preference. Base earning of 1 coin per complete ₹100 eligible spend is added automatically.</p></div></div>
+        <div className="admin-card__body">
+
+          {/* ── Overview table: all variants with any bonus configured ── */}
+          {(() => {
+            const configuredVariantIds = [...new Set(packRules.filter((r) => r.bonus_coins > 0).map((r) => r.variant_id))];
+            if (!configuredVariantIds.length) return <p className="loyalty-muted">No pack bonuses configured yet. Use the editor below to add them.</p>;
+            function packSummary(variantId: number, quantity: 1 | 2 | 3): string {
+              const o = bonusFor(variantId, quantity, 'one_time');
+              const m = bonusFor(variantId, quantity, 'monthly');
+              const t = bonusFor(variantId, quantity, 'two_months');
+              return `${o} / ${m} / ${t}`;
+            }
+            return (
+              <div>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem', color: '#333' }}>Configured variants</h3>
+                <div className="admin-table-wrap" style={{ marginBottom: '2rem' }}>
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Product / Variant</th>
+                        <th title="One-time / Monthly / Every 2 months">1-Pack<br/><small style={{fontWeight:400,color:'#888'}}>1× / mo / 2mo</small></th>
+                        <th title="One-time / Monthly / Every 2 months">2-Pack<br/><small style={{fontWeight:400,color:'#888'}}>1× / mo / 2mo</small></th>
+                        <th title="One-time / Monthly / Every 2 months">3-Pack<br/><small style={{fontWeight:400,color:'#888'}}>1× / mo / 2mo</small></th>
+                        <th />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {configuredVariantIds.map((variantId) => (
+                        <tr key={variantId} style={Number(bonusVariantId) === variantId ? { background: '#f0f9f7' } : undefined}>
+                          <td><strong>{productLabel(variantId)}</strong></td>
+                          <td>{packSummary(variantId, 1)}</td>
+                          <td>{packSummary(variantId, 2)}</td>
+                          <td>{packSummary(variantId, 3)}</td>
+                          <td>
+                            <button
+                              className="admin-button admin-button--ghost"
+                              type="button"
+                              onClick={() => {
+                                setBonusVariantId(String(variantId));
+                                document.getElementById('loyalty-pack-editor')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                              }}
+                            >
+                              {Number(bonusVariantId) === variantId ? '✓ Editing' : 'Edit'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ── Editor: select a variant and set its pack bonuses ── */}
+          <form id="loyalty-pack-editor" className="admin-form" onSubmit={savePackBonuses}>
+            <label className="loyalty-pack-picker">
+              <span>Select product and variant to configure</span>
+              <select value={bonusVariantId} onChange={(event) => setBonusVariantId(event.target.value)}>
+                <option value="">Choose a product and variant</option>
+                {catalogItems.map((item) => (
+                  <optgroup key={item.id} label={item.name}>
+                    {item.variants.map((variant) => (
+                      <option key={variant.id} value={variant.id}>
+                        {variant.variantName}{variant.isActive === 0 ? ' (inactive)' : ''}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </label>
+
+            {bonusVariantId && (
+              <div>
+                <p style={{ fontSize: '0.85rem', color: '#555', marginBottom: '0.5rem' }}>
+                  Editing: <strong>{productLabel(Number(bonusVariantId))}</strong> — enter bonus coins for each pack size and purchase plan. 0 = no bonus.
+                </p>
+                <div className="admin-table-wrap">
+                  <table className="admin-table loyalty-pack-table">
+                    <thead>
+                      <tr>
+                        <th>Pack size</th>
+                        <th>One-time bonus</th>
+                        <th>Every month bonus</th>
+                        <th>Every 2 months bonus</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {([1, 2, 3] as const).map((quantity) => (
+                        <tr key={quantity}>
+                          <th scope="row">{quantity}-pack</th>
+                          {(['one_time', 'monthly', 'two_months'] as const).map((plan) => (
+                            <td key={plan}>
+                              <input
+                                type="number" min="0" max="1000000" step="1"
+                                aria-label={`${quantity}-pack ${plan.replaceAll('_', ' ')} bonus coins`}
+                                value={bonusFor(Number(bonusVariantId), quantity, plan)}
+                                onChange={(event) => updatePackBonus(Number(bonusVariantId), quantity, plan, Number(event.target.value))}
+                              />
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            <small>0 means no pack bonus. Coins are awarded only for paid orders, then released after delivery and the return window. An order of more than 3 packs earns the normal base coins without a pack bonus.</small>
+            <div><button className="admin-button admin-button--primary" type="submit" disabled={busy === 'pack-bonuses'}>{busy === 'pack-bonuses' ? 'Saving…' : 'Save pack coin rules'}</button></div>
+          </form>
+        </div>
+      </section>
     </div>
   );
 }

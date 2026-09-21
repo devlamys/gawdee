@@ -83,6 +83,13 @@ export interface LoyaltyRestrictions {
   categories: LoyaltyCategoryRestriction[];
 }
 
+export interface LoyaltyPackBonusRule {
+  variant_id: number;
+  pack_quantity: 1 | 2 | 3;
+  purchase_plan: 'one_time' | 'monthly' | 'two_months';
+  bonus_coins: number;
+}
+
 const API_BASE = typeof window === 'undefined' ? env.internalApiUrl : env.publicApiUrl;
 
 function getAdminToken(): string | null {
@@ -568,6 +575,17 @@ export const adminApi = {
     return adminFetch<{ ok: boolean } & LoyaltyRestrictions>('/loyalty/restrictions', {
       method: 'PUT',
       body: JSON.stringify(restrictions),
+    });
+  },
+
+  async getLoyaltyPackBonuses() {
+    return adminFetch<{ ok: boolean; rules: LoyaltyPackBonusRule[] }>('/loyalty/pack-bonuses');
+  },
+
+  async saveLoyaltyPackBonuses(rules: LoyaltyPackBonusRule[]) {
+    return adminFetch<{ ok: boolean; rules: LoyaltyPackBonusRule[] }>('/loyalty/pack-bonuses', {
+      method: 'PUT',
+      body: JSON.stringify({ rules }),
     });
   },
 

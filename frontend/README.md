@@ -42,7 +42,7 @@ Open http://localhost:3000.
 | `INTERNAL_API_URL` | server-only | SSR / route handlers (`http://127.0.0.1:8001/api`) |
 | `NEXT_PUBLIC_API_URL` | browser | Browser API base (`/api`, via proxy) |
 | `NEXT_PUBLIC_RAZORPAY_CHECKOUT_URL` | browser | Razorpay checkout.js script |
-| `NEXT_PUBLIC_LOTTIE_URL` / `NEXT_PUBLIC_CONFETTI_URL` | browser | Animation/effects CDN scripts |
+| `NEXT_PUBLIC_LOTTIE_URL` | browser | Lottie animation CDN script |
 | `NEXT_PUBLIC_CURRENCY` | browser | Currency code (`INR`) |
 | `NEXT_PUBLIC_DEFAULT_*` | browser | Fallback brand/shipping display until backend `/storefront` loads |
 

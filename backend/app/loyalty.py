@@ -190,7 +190,7 @@ async def price_loyalty_lines(db: aiosqlite.Connection, pricing: dict) -> dict:
     result = []
     for i, line in enumerate(pricing["items"]):
         product = line["product"]
-        pid = str(product["id"])
+        pid = str(product.get("variant_id") or product["id"])
         category = str(product.get("category_key") or "").lower()
         product_rule = await one(db, "SELECT * FROM loyalty_product_rules WHERE product_id=?", (pid,))
         category_rule = await one(db, "SELECT * FROM loyalty_category_rules WHERE category_key=?", (category,))
@@ -199,6 +199,15 @@ async def price_loyalty_lines(db: aiosqlite.Connection, pricing: dict) -> dict:
         redeem_excluded = gift_card or bool((product_rule or {}).get("redeem_excluded")) or bool((category_rule or {}).get("redeem_excluded"))
         multiplier = max(int((product_rule or {}).get("multiplier") or 1), int((category_rule or {}).get("multiplier") or 1))
         net_paise = max(0, gross[i] - discounts[i])
+        purchase_plan = str(line.get("purchase_plan") or "one_time")
+        pack_bonus_coins = 0
+        if not earn_excluded and net_paise > 0 and product.get("variant_id") and 1 <= int(line["quantity"]) <= 3:
+            pack_rule = await one(
+                db,
+                "SELECT bonus_coins FROM loyalty_pack_bonuses WHERE variant_id=? AND pack_quantity=? AND purchase_plan=?",
+                (int(product["variant_id"]), int(line["quantity"]), purchase_plan),
+            )
+            pack_bonus_coins = int(pack_rule["bonus_coins"]) if pack_rule else 0
         result.append({
             "product_id": pid, "quantity": int(line["quantity"]), "gross_paise": gross[i],
             "coupon_discount_paise": discounts[i],
@@ -206,6 +215,7 @@ async def price_loyalty_lines(db: aiosqlite.Connection, pricing: dict) -> dict:
             "redeemable_paise": 0 if redeem_excluded else net_paise,
             "earn_excluded": int(earn_excluded), "redeem_excluded": int(redeem_excluded),
             "multiplier": min(20, multiplier),
+            "pack_bonus_coins": pack_bonus_coins, "purchase_plan": purchase_plan,
         })
     return {
         "lines": result,
@@ -404,8 +414,12 @@ async def create_pending_purchase_reward(db: aiosqlite.Connection, order_id: int
     else:
         base = 0
 
-    lines = await all_rows(db, "SELECT eligible_paise,multiplier FROM loyalty_order_lines WHERE order_id=?", (order_id,))
-    bonus = sum(earned_coins(int(line["eligible_paise"])) * (int(line["multiplier"]) - 1) for line in lines)
+    lines = await all_rows(db, "SELECT eligible_paise,multiplier,pack_bonus_coins FROM loyalty_order_lines WHERE order_id=?", (order_id,))
+    bonus = sum(
+        earned_coins(int(line["eligible_paise"])) * (int(line["multiplier"]) - 1)
+        + int(line["pack_bonus_coins"])
+        for line in lines
+    )
     now = sql_time(utc_now())
     campaigns = await all_rows(
         db, "SELECT * FROM loyalty_promotions WHERE active=1 AND starts_at<=? AND ends_at>? AND kind='MULTIPLIER'",

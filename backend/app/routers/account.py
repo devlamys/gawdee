@@ -351,6 +351,7 @@ async def customer_order_detail(order_number: str, customer=Depends(get_current_
 class LoyaltyQuoteLine(BaseModel):
     id: str = Field(min_length=1)
     quantity: int = Field(default=1, ge=1, le=settings.CHECKOUT_MAX_QTY)
+    purchase_plan: str = "one_time"
 
 
 class LoyaltyQuoteRequest(BaseModel):
@@ -424,7 +425,7 @@ async def calculate_redemption(payload: LoyaltyQuoteRequest, customer=Depends(ge
     if not payload.items:
         raise HTTPException(status_code=422, detail={"message": "Choose at least one product to calculate loyalty redemption."})
     try:
-        pricing = await checkout_pricing(db, [{"id": item.id, "quantity": item.quantity} for item in payload.items], payload.coupon_code or "")
+        pricing = await checkout_pricing(db, [{"id": item.id, "quantity": item.quantity, "purchase_plan": item.purchase_plan} for item in payload.items], payload.coupon_code or "")
         quote = await redemption_quote(
             db,
             int(customer["id"]),

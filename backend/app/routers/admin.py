@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, Header, Request, Response, UploadFile, File, Form
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List, Any, Dict
+from typing import Optional, List, Any, Dict, Literal
 import bcrypt
 import hmac
 import hashlib
@@ -1285,6 +1285,61 @@ async def admin_get_loyalty_restrictions(admin: Dict[str, Any] = Depends(get_cur
         async with db.execute("SELECT * FROM loyalty_category_rules ORDER BY category_key") as cur:
             categories = [dict(row) for row in await cur.fetchall()]
         return {"ok": True, "products": products, "categories": categories}
+    finally:
+        await db.close()
+
+
+class LoyaltyPackBonusRule(BaseModel):
+    variant_id: int = Field(gt=0)
+    pack_quantity: int = Field(ge=1, le=3)
+    purchase_plan: Literal["one_time", "monthly", "two_months"]
+    bonus_coins: int = Field(ge=0, le=1_000_000)
+
+
+class LoyaltyPackBonusPayload(BaseModel):
+    rules: list[LoyaltyPackBonusRule] = Field(max_length=500)
+
+
+@router.get("/loyalty/pack-bonuses")
+async def admin_get_loyalty_pack_bonuses(admin: Dict[str, Any] = Depends(get_current_admin)):
+    db = await get_db()
+    try:
+        async with db.execute(
+            "SELECT variant_id,pack_quantity,purchase_plan,bonus_coins FROM loyalty_pack_bonuses ORDER BY variant_id,pack_quantity,purchase_plan"
+        ) as cur:
+            return {"ok": True, "rules": [dict(row) for row in await cur.fetchall()]}
+    finally:
+        await db.close()
+
+
+@router.put("/loyalty/pack-bonuses")
+async def admin_save_loyalty_pack_bonuses(
+    payload: LoyaltyPackBonusPayload, admin: Dict[str, Any] = Depends(get_current_admin)
+):
+    keys = [(row.variant_id, row.pack_quantity, row.purchase_plan) for row in payload.rules]
+    if len(keys) != len(set(keys)):
+        raise HTTPException(status_code=422, detail={"message": "Each variant, pack, and purchase option can have only one rule."})
+    db = await get_db()
+    try:
+        await db.execute("BEGIN IMMEDIATE")
+        variant_ids = {row.variant_id for row in payload.rules}
+        if variant_ids:
+            placeholders = ",".join("?" for _ in variant_ids)
+            async with db.execute(f"SELECT id FROM variant WHERE id IN ({placeholders})", tuple(variant_ids)) as cur:
+                found = {int(row["id"]) for row in await cur.fetchall()}
+            if found != variant_ids:
+                raise HTTPException(status_code=422, detail={"message": "A selected product variant no longer exists."})
+        await db.execute("DELETE FROM loyalty_pack_bonuses")
+        for row in payload.rules:
+            await db.execute(
+                "INSERT INTO loyalty_pack_bonuses(variant_id,pack_quantity,purchase_plan,bonus_coins) VALUES (?,?,?,?)",
+                (row.variant_id, row.pack_quantity, row.purchase_plan, row.bonus_coins),
+            )
+        await db.commit()
+        return await admin_get_loyalty_pack_bonuses(admin)
+    except Exception:
+        await db.rollback()
+        raise
     finally:
         await db.close()
 

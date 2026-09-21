@@ -67,7 +67,6 @@ export default async function RootLayout({
           <StorefrontShell settings={settings}>{children}</StorefrontShell>
         </Providers>
         <Script src={env.lottieUrl} strategy="lazyOnload" />
-        <Script src={env.confettiUrl} strategy="lazyOnload" />
       </body>
     </html>
   );

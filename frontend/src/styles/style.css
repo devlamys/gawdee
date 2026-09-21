@@ -6462,6 +6462,38 @@ em {
   box-shadow: 0 10px 30px rgba(46, 125, 50, 0.2);
 }
 
+.order-success-icon--celebrating {
+  position: relative;
+  animation: order-success-reveal 720ms cubic-bezier(0.2, 1.4, 0.42, 1) both;
+}
+
+.order-success-icon--celebrating::after {
+  content: '';
+  position: absolute;
+  inset: -9px;
+  border: 1px solid rgba(195, 148, 67, 0.75);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: order-success-halo 1.4s ease-out both;
+}
+
+@keyframes order-success-reveal {
+  from { transform: scale(0.65); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes order-success-halo {
+  from { transform: scale(0.5); opacity: 0.9; }
+  to { transform: scale(1.45); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .order-success-icon--celebrating,
+  .order-success-icon--celebrating::after {
+    animation: none;
+  }
+}
+
 .order-success-card h1 {
   font-size: clamp(2.4rem, 4.5vw, 3.4rem);
   margin-block: 12px 16px;

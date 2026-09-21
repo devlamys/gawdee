@@ -34,14 +34,10 @@ export const env = {
     'https://checkout.razorpay.com/v1/checkout.js'
   ),
 
-  /** Third-party animation/effects scripts loaded in the root layout. */
+  /** Third-party animation script loaded in the root layout. */
   lottieUrl: str(
     'NEXT_PUBLIC_LOTTIE_URL',
     'https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js'
-  ),
-  confettiUrl: str(
-    'NEXT_PUBLIC_CONFETTI_URL',
-    'https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js'
   ),
 
   /** ISO-4217 currency code used by `money()` formatting. */

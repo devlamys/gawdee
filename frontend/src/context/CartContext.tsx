@@ -75,35 +75,6 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setVariantsDrawer((prev) => ({ ...prev, isOpen: false }));
   };
 
-  const triggerConfetti = () => {
-    if (typeof window !== 'undefined' && (window as any).confetti) {
-      try {
-        (window as any).confetti({
-          particleCount: 5,
-          angle: 90,
-          spread: 12,
-          startVelocity: 20,
-          origin: { x: Math.random(), y: -0.1 },
-          colors: [
-            '#ffffffff',
-            '#854700ff',
-            '#c8a45d',
-            '#E6D0BA',
-            '#FFD700',
-            '#466954',
-            '#192d10',
-          ],
-          zIndex: 10005,
-          ticks: 400,
-          gravity: 1.5,
-          scalar: 1,
-          shapes: ['square', 'circle', 'star'],
-          disableForReducedMotion: true,
-        });
-      } catch {}
-    }
-  };
-
   const addItem = (item: Omit<CartItem, 'quantity'>, qty = 1, autoOpen = false) => {
     setItems((prev) => {
       const existingIndex = prev.findIndex((i) => i.id === item.id);
@@ -114,7 +85,6 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       return [...prev, { ...item, quantity: qty }];
     });
-    triggerConfetti();
     if (autoOpen) {
       setIsOpen(true);
     }

@@ -153,6 +153,7 @@ export const api = {
   loyalty: {
     getWallet: () => fetcher<{ ok: boolean; wallet: LoyaltyWallet }>('/loyalty/wallet', { cache: 'no-store' }),
     getTransactions: () => fetcher<{ ok: boolean; transactions: LoyaltyTransaction[] }>('/loyalty/transactions', { cache: 'no-store' }),
+    getPackOffers: (variantId: number) => fetcher<{ ok: boolean; variant_id: number; offers: Array<{ pack_quantity: number; purchase_plan: 'one_time' | 'monthly' | 'two_months'; base_coins: number; bonus_coins: number; estimated_coins: number }> }>('/loyalty/pack-offers/' + variantId),
     calculateRedemption: (payload: {
       items: { id: string; quantity: number }[];
       coupon_code?: string;
@@ -180,7 +181,7 @@ export const api = {
     loyalty_coins?: number;
     payment_method: 'razorpay' | 'cod';
     checkout_token: string;
-    items: { id: string; quantity: number }[];
+    items: { id: string; quantity: number; purchase_plan?: 'one_time' | 'monthly' | 'two_months' }[];
   }) => fetcher<CreateOrderResponse>('/create-order', {
     method: 'POST',
     body: JSON.stringify(payload),

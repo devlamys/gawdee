@@ -5,7 +5,7 @@ Public storefront routers — catalog, catalog product, subscribe, product revie
 
 import json
 import re
-from typing import Optional
+from typing import Optional, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr
 
@@ -24,6 +24,7 @@ from ..database import (
     map_variant_row,
 )
 from ..commerce import checkout_pricing, create_local_order, expire_stale_payment_orders
+from ..loyalty import earned_coins, loyalty_settings, price_loyalty_lines
 from ..integrations import (
     order_payable_paise, razorpay_configured, razorpay_create_order_paise, razorpay_verify_payment,
     razorpay_fetch_payment, razorpay_payment_matches_order,
@@ -301,6 +302,39 @@ class CustomerFields(BaseModel):
 class CartItem(BaseModel):
     id: str
     quantity: int = 1
+    purchase_plan: Literal["one_time", "monthly", "two_months"] = "one_time"
+
+
+@router.get("/loyalty/pack-offers/{variant_id}")
+async def public_loyalty_pack_offers(variant_id: int, db: aiosqlite.Connection = Depends(db_dep)):
+    variant = await get_variant_by_ref(db, str(variant_id), False)
+    if not variant or int(variant["id"]) != variant_id:
+        raise HTTPException(status_code=404, detail={"message": "Product variant not found."})
+    item = await get_item_by_id(db, int(variant["item_id"]))
+    if not item:
+        raise HTTPException(status_code=404, detail={"message": "Product not found."})
+    product = map_variant_row(item, variant)
+    config = await loyalty_settings(db)
+    offers = []
+    for quantity in (1, 2, 3):
+        for plan in ("one_time", "monthly", "two_months"):
+            pricing = {
+                "items": [{"product": product, "quantity": quantity, "purchase_plan": plan}],
+                "discount": 0,
+            }
+            snapshot = (await price_loyalty_lines(db, pricing))["lines"][0]
+            base = earned_coins(int(snapshot["eligible_paise"]))
+            multiplier_bonus = base * (int(snapshot["multiplier"]) - 1)
+            bonus = int(snapshot["pack_bonus_coins"])
+            total = min(config["max_earn_per_order"], base + multiplier_bonus + bonus) if config["enabled"] else 0
+            offers.append({
+                "pack_quantity": quantity,
+                "purchase_plan": plan,
+                "base_coins": base if config["enabled"] else 0,
+                "bonus_coins": bonus if config["enabled"] else 0,
+                "estimated_coins": total,
+            })
+    return {"ok": True, "variant_id": variant_id, "offers": offers}
 
 class CreateOrderRequest(BaseModel):
     customer: CustomerFields
@@ -343,7 +377,7 @@ async def create_order(payload: CreateOrderRequest, request: Request, db: aiosql
         if payment_method == "razorpay" and not await razorpay_configured(db):
             raise ValueError("Online payment is being configured. Choose cash on delivery or contact the store.")
 
-        requested_items = [{"id": i.id, "quantity": i.quantity} for i in payload.items]
+        requested_items = [{"id": i.id, "quantity": i.quantity, "purchase_plan": i.purchase_plan} for i in payload.items]
         order = await create_local_order(
             db, fields, requested_items, payment_method,
             int(customer_id) if customer_id else None,
