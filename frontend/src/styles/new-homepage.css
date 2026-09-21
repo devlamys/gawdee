@@ -253,6 +253,22 @@
   color: #008865;
 }
 
+.nhp-card__desc--mobile {
+  display: none;
+}
+
+@media (max-width: 560px) {
+  .nhp-card__desc--desktop {
+    display: none;
+  }
+  .nhp-card__desc--mobile {
+    display: block;
+  }
+  .hide-on-mobile-star {
+    display: none !important;
+  }
+}
+
 .nhp-card__price {
   display: flex;
   align-items: center;
@@ -262,21 +278,14 @@
 }
 
 .nhp-card__price strong {
-  font-size: 1.25rem;
+  font-size: 1.6rem;
   font-weight: 800;
   color: #008865;
 }
 
 .nhp-card__price s {
-  font-size: 0.9rem;
+  font-size: 1.15rem;
   color: #9aa8a0;
-}
-
-.nhp-card__save {
-  margin: 0;
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: #008865;
 }
 
 .nhp-card__add {
@@ -420,11 +429,19 @@
   }
 
   .nhp-card {
-    flex: 0 0 calc(50% - 19px); /* ~2 cards per screen minus gap/padding */
-    max-width: calc(50% - 19px);
-    min-width: calc(50% - 19px);
+    flex: 0 0 calc(68% - 16px);
+    max-width: calc(68% - 16px);
+    min-width: calc(68% - 16px);
     scroll-snap-align: start;
     scroll-snap-stop: normal;
+  }
+
+  .nhp-card__price strong {
+    font-size: 1.4rem;
+  }
+
+  .nhp-card__price s {
+    font-size: 1rem;
   }
 }
 

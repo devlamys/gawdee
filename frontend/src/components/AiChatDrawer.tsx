@@ -104,7 +104,6 @@ export const AiChatDrawer: React.FC = () => {
         <span className="ai-float__orb">
           <img src="/assets/images/gawdee-ai-robot-v1.png" alt="" aria-hidden="true" />
         </span>
-        <span className="ai-float__online" aria-hidden="true"></span>
       </button>
 
       {/* Slide-in Assistant panel */}

@@ -163,29 +163,7 @@ export default async function HomePage() {
       {/* 1. 3D Animated Hero Carousel (prices/stock come from the backend) */}
       <AnimatedHero />
 
-      {/* 2. Welcome Section */}
-      <section style={{ textAlign: 'center', padding: '72px 24px 24px', backgroundColor: '#fdfdfb' }}>
-        <h2 style={{ 
-          fontFamily: "'Roboto Slab', Georgia, serif", 
-          color: '#006e52', 
-          fontSize: 'clamp(32px, 5vw, 44px)', 
-          fontWeight: 800,
-          margin: '0 0 12px 0',
-          lineHeight: 1.2 
-        }}>
-          Welcome To Gawdee!
-        </h2>
-        <p style={{ 
-          fontFamily: "'Roboto Slab', Georgia, serif", 
-          color: '#006e52', 
-          fontSize: 'clamp(22px, 3vw, 32px)', 
-          fontWeight: 500,
-          margin: 0,
-          lineHeight: 1.3 
-        }}>
-          You're One Step Closer to Purity
-        </p>
-      </section>
+
 
       {/* 3. Bestsellers Rail Section (real backend products only) */}
       <NhpExplore items={items} />

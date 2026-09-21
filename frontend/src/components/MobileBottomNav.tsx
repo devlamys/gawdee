@@ -21,7 +21,7 @@ export const MobileBottomNav: React.FC = () => {
 
   const isHome = pathname === '/';
   const isCategories = pathname.startsWith('/products');
-  const isWallet = pathname.startsWith('/account');
+  const isWallet = pathname.startsWith('/wallet');
 
   return (
     <nav className="mobile-bottom-nav" aria-label="Primary">
@@ -45,9 +45,17 @@ export const MobileBottomNav: React.FC = () => {
 
       <Link
         href="/account"
+        className={`mobile-bottom-nav__tab ${pathname === '/account' ? 'is-active' : ''}`}
+      >
+        <i className={`ph ${pathname === '/account' ? 'ph-fill ph-user' : 'ph-user'}`} aria-hidden="true"></i>
+        <span>Account</span>
+      </Link>
+
+      <Link
+        href="/wallet"
         className={`mobile-bottom-nav__tab ${isWallet ? 'is-active' : ''}`}
         aria-current={isWallet ? 'page' : undefined}
-        aria-label="Coin wallet (coming soon) — open your account"
+        aria-label="Coin wallet (coming soon)"
       >
         <i className={`ph ${isWallet ? 'ph-fill ph-coins' : 'ph-coins'}`} aria-hidden="true"></i>
         <span>Wallet</span>
