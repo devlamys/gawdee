@@ -213,6 +213,7 @@ export interface Order {
 
 export interface LoyaltyWallet {
   available_coins: number;
+  balance_review?: boolean;
   pending_coins: number;
   reserved_coins: number;
   lifetime_earned: number;
@@ -245,6 +246,10 @@ export interface LoyaltyRedemptionQuote {
   requested_coins: number;
   discount_paise: number;
   available_coins: number;
+  subtotal_paise: number;
+  shipping_paise: number;
+  coupon_discount_paise: number;
+  total_paise: number;
 }
 
 export interface BlogPost {

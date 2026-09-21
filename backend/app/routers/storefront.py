@@ -25,7 +25,7 @@ from ..database import (
 )
 from ..commerce import checkout_pricing, create_local_order, expire_stale_payment_orders
 from ..integrations import (
-    razorpay_configured, razorpay_create_order, razorpay_verify_payment,
+    order_payable_paise, razorpay_configured, razorpay_create_order_paise, razorpay_verify_payment,
     razorpay_fetch_payment, razorpay_payment_matches_order,
     whatsapp_configured, whatsapp_request_otp, whatsapp_verify_otp,
     ai_configured, ai_generate,
@@ -359,7 +359,7 @@ async def create_order(payload: CreateOrderRequest, request: Request, db: aiosql
                 raise ValueError("The previous payment attempt ended. Refresh checkout to start a new secure payment.")
             if not order["razorpay_order_id"]:
                 try:
-                    rp_order = await razorpay_create_order(db, int(order["total"]), str(order["order_number"]),
+                    rp_order = await razorpay_create_order_paise(db, order_payable_paise(order), str(order["order_number"]),
                                                            {"gawdee_order": order["order_number"], "customer_email": fields["email"]})
                     await db.execute(
                         "UPDATE orders SET razorpay_order_id=?, payment_status='pending', payment_error='', updated_at=CURRENT_TIMESTAMP WHERE id=? AND payment_status!='paid'",
@@ -384,6 +384,13 @@ async def create_order(payload: CreateOrderRequest, request: Request, db: aiosql
             "discount": int(order["discount"]),
             "shipping": int(order["shipping"]),
             "total": int(order["total"]),
+            "subtotal_paise": int(order["subtotal_paise"] or 0),
+            "shipping_paise": int(order["shipping_paise"] or 0),
+            "discount_paise": int(order["discount_paise"] or 0),
+            "loyalty_discount_paise": int(order["loyalty_discount_paise"] or 0),
+            "total_paise": order_payable_paise(order),
+            "loyalty_coins_earned": int(order["loyalty_coins_earned"] or 0),
+            "loyalty_coins_redeemed": int(order["loyalty_coins_redeemed"] or 0),
             "coupon_code": order["coupon_code"],
             "already_paid": order["payment_status"] == "paid",
             "success_url": f"order-success.php?order={order['order_number']}",
@@ -393,7 +400,7 @@ async def create_order(payload: CreateOrderRequest, request: Request, db: aiosql
             response["razorpay"] = {
                 "key": await get_setting(db, "razorpay_key_id"),
                 "order_id": order["razorpay_order_id"],
-                "amount": int(order["total"]) * 100,
+                "amount": order_payable_paise(order),
                 "currency": settings.CURRENCY,
                 "name": await get_setting(db, "store_name", "Gawdee"),
                 "description": f"Order {order['order_number']}",

@@ -222,7 +222,11 @@ async def admin_logout(response: Response):
 
 @router.get("/stats")
 async def admin_stats(admin: Dict[str, Any] = Depends(get_current_admin)):
-    orders_row = await fetch_one("SELECT count(*) as count, coalesce(sum(case when payment_status = 'paid' then total else 0 end), 0) as revenue FROM orders")
+    orders_row = await fetch_one("""SELECT count(*) as count,
+        COALESCE(SUM(CASE WHEN payment_status='paid' THEN
+            CASE WHEN total_paise>0 OR subtotal_paise>0 OR shipping_paise>0
+                THEN total_paise ELSE MAX(0,total*100-loyalty_discount_paise) END
+            ELSE 0 END),0) AS revenue_paise FROM orders""")
     today_row = await fetch_one("SELECT count(*) as count FROM orders WHERE date(created_at) = date('now')")
     attention_row = await fetch_one("SELECT count(*) as count FROM orders WHERE status IN ('pending','on_hold') OR payment_status IN ('initializing','failed')")
     prod_row = await fetch_one("SELECT count(*) as count FROM products WHERE is_active = 1")
@@ -239,7 +243,11 @@ async def admin_stats(admin: Dict[str, Any] = Depends(get_current_admin)):
 
     # Recent orders
     recent_orders = await fetch_all("""
-        SELECT id, order_number, customer_name, email as customer_email, phone as customer_phone, total as total_amount, status, payment_status, created_at
+        SELECT id, order_number, customer_name, email as customer_email, phone as customer_phone,
+            total as total_amount,
+            CASE WHEN total_paise>0 OR subtotal_paise>0 OR shipping_paise>0
+                THEN total_paise ELSE MAX(0,total*100-loyalty_discount_paise) END AS total_paise,
+            status, payment_status, created_at
         FROM orders
         ORDER BY id DESC
         LIMIT ?
@@ -249,7 +257,8 @@ async def admin_stats(admin: Dict[str, Any] = Depends(get_current_admin)):
         "ok": True,
         "stats": {
             "orders": orders_row["count"] if orders_row else 0,
-            "revenue": int(orders_row["revenue"]) if orders_row else 0,
+            "revenue": int(orders_row["revenue_paise"]) // 100 if orders_row else 0,
+            "revenue_paise": int(orders_row["revenue_paise"]) if orders_row else 0,
             "today": today_row["count"] if today_row else 0,
             "attention": attention_row["count"] if attention_row else 0,
             "products": prod_row["count"] if prod_row else 0,
@@ -582,14 +591,19 @@ class UpdateOrderStatusPayload(BaseModel):
 
 @router.post("/orders/{order_id}/status")
 async def admin_update_order_status(order_id: int, payload: UpdateOrderStatusPayload, admin: Dict[str, Any] = Depends(get_current_admin)):
-    order = await fetch_one("SELECT * FROM orders WHERE id = ?", (order_id,))
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-    await execute("UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (payload.status, order_id))
-    await execute(
-        "INSERT INTO order_status_events (order_id, status, title, description) VALUES (?, ?, ?, ?)",
-        (order_id, payload.status, "Order updated", payload.note or f"Updated from {order['status']} to {payload.status}"),
-    )
+    from ..commerce import update_order_status
+    db = await get_db()
+    try:
+        async with db.execute("SELECT status FROM orders WHERE id = ?", (order_id,)) as cur:
+            order = await cur.fetchone()
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        try:
+            await update_order_status(db, order_id, payload.status, payload.note or f"Updated from {order['status']} to {payload.status}")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        await db.close()
     return {"ok": True, "status": payload.status}
 
 class UpdateOrderTrackingPayload(BaseModel):
@@ -1134,6 +1148,15 @@ async def admin_get_loyalty_wallet(customer_id: int, admin: Dict[str, Any] = Dep
             wallet = await cur.fetchone()
         if not wallet:
             raise HTTPException(status_code=404, detail="Customer wallet not found.")
+        from ..loyalty import spendable_balance
+        wallet_result = dict(wallet)
+        balance = await spendable_balance(db, customer_id, wallet_result)
+        wallet_result.update({
+            "spendable_coins": balance["available_coins"],
+            "ledger_available_coins": balance["ledger_coins"],
+            "lot_available_coins": balance["lot_coins"],
+            "balance_mismatch": balance["balance_mismatch"],
+        })
         async with db.execute(
             """
             SELECT *
@@ -1145,58 +1168,39 @@ async def admin_get_loyalty_wallet(customer_id: int, admin: Dict[str, Any] = Dep
             (customer_id,),
         ) as cur:
             transactions = [dict(row) for row in await cur.fetchall()]
-        return {"ok": True, "wallet": dict(wallet), "transactions": transactions}
+        return {"ok": True, "wallet": wallet_result, "transactions": transactions}
     finally:
         await db.close()
 
 
 @router.post("/loyalty/adjustment")
 async def admin_adjust_loyalty_wallet(payload: Dict[str, Any], admin: Dict[str, Any] = Depends(get_current_admin)):
-    customer_id = int(payload.get("customer_id") or 0)
-    coins = int(payload.get("coins") or 0)
+    try:
+        customer_id = int(payload.get("customer_id") or 0)
+        coins = int(payload.get("coins") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Customer ID and coins must be whole numbers.")
     reason = str(payload.get("reason") or "").strip()
     reference_id = str(payload.get("reference_id") or "").strip()
-    if not customer_id or abs(coins) <= 0 or len(reason) < 3 or not reference_id:
+    if customer_id <= 0 or not 0 < abs(coins) <= 1_000_000_000 or not 3 <= len(reason) <= 500 or not 1 <= len(reference_id) <= 255:
         raise HTTPException(status_code=422, detail="Provide a valid customer, a positive whole coin count, a reason, and a reference ID.")
     db = await get_db()
     try:
+        await db.execute("BEGIN IMMEDIATE")
         async with db.execute("SELECT id FROM users WHERE id = ? AND role = 'customer'", (customer_id,)) as cur:
             customer = await cur.fetchone()
         if not customer:
             raise HTTPException(status_code=404, detail="Customer not found.")
-        from ..loyalty import append_transaction
-        if coins > 0:
-            await append_transaction(
-                db,
-                customer_id,
-                "ADMIN_CREDIT",
-                coins,
-                coins,
-                0,
-                0,
-                reference_id,
-                "AVAILABLE",
-                source="admin",
-                description=reason,
-                allow_negative=True,
-            )
-        else:
-            await append_transaction(
-                db,
-                customer_id,
-                "ADMIN_DEBIT",
-                abs(coins),
-                -abs(coins),
-                0,
-                0,
-                reference_id,
-                "AVAILABLE",
-                source="admin",
-                description=reason,
-                allow_negative=True,
-            )
+        from ..loyalty import apply_admin_adjustment
+        try:
+            changed = await apply_admin_adjustment(db, customer_id, coins, reference_id, reason, int(admin["id"]))
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         await db.commit()
-        return {"ok": True, "message": "Adjustment recorded."}
+        return {"ok": True, "message": "Adjustment recorded." if changed else "Adjustment already recorded."}
+    except Exception:
+        await db.rollback()
+        raise
     finally:
         await db.close()
 
@@ -1207,46 +1211,65 @@ async def admin_get_loyalty_reports(admin: Dict[str, Any] = Depends(get_current_
     try:
         async with db.execute(
             """
+            WITH ledger_balance AS (
+                SELECT customer_id, SUM(delta_available) AS available_coins
+                FROM loyalty_transactions GROUP BY customer_id
+            ), lot_balance AS (
+                SELECT customer_id, SUM(available_coins) AS available_coins
+                FROM loyalty_lots
+                WHERE expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP
+                GROUP BY customer_id
+            )
             SELECT
-                COALESCE(SUM(available_coins),0) AS available_coins,
-                COALESCE(SUM(pending_coins),0) AS pending_coins,
-                COALESCE(SUM(lifetime_earned),0) AS total_coins_issued,
-                COALESCE(SUM(lifetime_redeemed),0) AS redeemed_coins,
-                COALESCE(SUM(lifetime_expired),0) AS expired_coins,
-                COALESCE(SUM(lifetime_reversed),0) AS reversed_coins,
-                COUNT(CASE WHEN (available_coins + pending_coins + reserved_coins) > 0 OR lifetime_earned > 0 THEN 1 END) AS customers_using_loyalty,
-                COUNT(DISTINCT CASE WHEN order_id IS NOT NULL THEN order_id END) AS orders_using_loyalty,
-                COALESCE(SUM(CAST(order_value AS INTEGER)),0) AS loyalty_discount_paise
+                COALESCE(SUM(MAX(0, MIN(w.available_coins,
+                    COALESCE(lb.available_coins,0), COALESCE(lots.available_coins,0)))),0) AS available_coins,
+                COALESCE(SUM(w.pending_coins),0) AS pending_coins,
+                COUNT(CASE WHEN w.available_coins + w.pending_coins + w.reserved_coins > 0
+                    OR EXISTS(SELECT 1 FROM loyalty_transactions t WHERE t.customer_id=w.customer_id)
+                    THEN 1 END) AS customers_using_loyalty,
+                COALESCE(SUM(CASE WHEN w.available_coins != COALESCE(lb.available_coins,0)
+                    OR MAX(0,COALESCE(lb.available_coins,0)) != COALESCE(lots.available_coins,0)
+                    THEN 1 ELSE 0 END),0) AS balance_mismatch_count
             FROM loyalty_wallets w
-            LEFT JOIN (
-                SELECT order_id, SUM(loyalty_discount_paise) as order_value
-                FROM orders
-                WHERE loyalty_discount_paise > 0
-                GROUP BY order_id
-            ) o ON 1 = 1
+            LEFT JOIN ledger_balance lb ON lb.customer_id=w.customer_id
+            LEFT JOIN lot_balance lots ON lots.customer_id=w.customer_id
             """
         ) as cur:
-            row = await cur.fetchone()
+            balances = dict(await cur.fetchone())
         async with db.execute(
-            "SELECT COALESCE(SUM(coins), 0) AS referral_rewards FROM loyalty_transactions WHERE transaction_type = 'REFERRAL_REWARD'"
+            """SELECT
+                COALESCE(SUM(CASE WHEN transaction_type IN
+                    ('PURCHASE_EARN','FIRST_ORDER_BONUS','SIGNUP_BONUS','REFERRAL_REWARD',
+                     'REVIEW_REWARD','BIRTHDAY_REWARD','PROMOTIONAL_REWARD','ADMIN_CREDIT')
+                     THEN coins ELSE 0 END),0) AS total_coins_issued,
+                COALESCE(SUM(CASE WHEN transaction_type='REDEMPTION' THEN coins ELSE 0 END),0) AS redeemed_coins,
+                COALESCE(SUM(CASE WHEN transaction_type='EXPIRY' THEN coins ELSE 0 END),0) AS expired_coins,
+                COALESCE(SUM(CASE WHEN transaction_type IN ('REFUND_REVERSAL','CANCELLATION_REVERSAL','ADMIN_DEBIT')
+                     THEN coins ELSE 0 END),0) AS reversed_coins,
+                COALESCE(SUM(CASE WHEN transaction_type='REFERRAL_REWARD' THEN coins ELSE 0 END),0) AS referral_rewards,
+                COALESCE(SUM(CASE WHEN transaction_type='PROMOTIONAL_REWARD' THEN coins ELSE 0 END),0) AS promotional_rewards
+            FROM loyalty_transactions"""
         ) as cur:
-            referral = await cur.fetchone()
+            transactions = dict(await cur.fetchone())
         async with db.execute(
-            "SELECT COALESCE(SUM(coins), 0) AS promotional_rewards FROM loyalty_transactions WHERE transaction_type = 'PROMOTIONAL_REWARD'"
+            """SELECT COUNT(*) AS orders_using_loyalty,
+                COALESCE(SUM(loyalty_discount_paise),0) AS loyalty_discount_paise
+            FROM orders WHERE payment_status='paid' AND loyalty_coins_redeemed>0"""
         ) as cur:
-            promo = await cur.fetchone()
+            orders = dict(await cur.fetchone())
         report = {
-            "total_coins_issued": int((row or {}).get("total_coins_issued") or 0),
-            "available_coins": int((row or {}).get("available_coins") or 0),
-            "pending_coins": int((row or {}).get("pending_coins") or 0),
-            "redeemed_coins": int((row or {}).get("redeemed_coins") or 0),
-            "expired_coins": int((row or {}).get("expired_coins") or 0),
-            "reversed_coins": int((row or {}).get("reversed_coins") or 0),
-            "customers_using_loyalty": int((row or {}).get("customers_using_loyalty") or 0),
-            "orders_using_loyalty": int((row or {}).get("orders_using_loyalty") or 0),
-            "loyalty_discount_paise": int((row or {}).get("loyalty_discount_paise") or 0),
-            "referral_rewards": int((referral or {}).get("referral_rewards") or 0),
-            "promotional_rewards": int((promo or {}).get("promotional_rewards") or 0),
+            "total_coins_issued": int(transactions["total_coins_issued"]),
+            "available_coins": int(balances["available_coins"]),
+            "pending_coins": int(balances["pending_coins"]),
+            "redeemed_coins": int(transactions["redeemed_coins"]),
+            "expired_coins": int(transactions["expired_coins"]),
+            "reversed_coins": int(transactions["reversed_coins"]),
+            "customers_using_loyalty": int(balances["customers_using_loyalty"]),
+            "orders_using_loyalty": int(orders["orders_using_loyalty"]),
+            "loyalty_discount_paise": int(orders["loyalty_discount_paise"]),
+            "referral_rewards": int(transactions["referral_rewards"]),
+            "promotional_rewards": int(transactions["promotional_rewards"]),
+            "balance_mismatch_count": int(balances["balance_mismatch_count"]),
         }
         return {"ok": True, "reports": report}
     finally:

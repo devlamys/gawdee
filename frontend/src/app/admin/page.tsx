@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { adminApi } from '@/lib/admin-api';
 import { money } from '@/lib/utils';
+import { formatOrderTotal, formatPaise } from '@/lib/loyalty';
 
 // Mirrors backend make_slug: lowercase, non-alphanumerics → hyphen.
 function autoSlug(name: string): string {
@@ -433,7 +434,7 @@ function AdminPageContent() {  const searchParams = useSearchParams();
             <article className="stat-card">
               <i className="ph ph-currency-inr"></i>
               <span>Paid revenue</span>
-              <strong>₹{(stats?.stats?.revenue ?? 0).toLocaleString('en-IN')}</strong>
+              <strong>{formatPaise(stats?.stats?.revenue_paise ?? (stats?.stats?.revenue ?? 0) * 100)}</strong>
             </article>
             <article className="stat-card">
               <i className="ph ph-calendar-check"></i>
@@ -478,7 +479,7 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                             <small>{o.created_at}</small>
                           </td>
                           <td>{o.customer_name}</td>
-                          <td>₹{(o.total_amount ?? 0).toLocaleString('en-IN')}</td>
+                          <td>{formatPaise(o.total_paise ?? (o.total_amount ?? 0) * 100)}</td>
                           <td>
                             <span className={`status-pill status-pill--${o.status}`}>
                               {o.status}
@@ -1003,7 +1004,21 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                         {o.city}, {o.state} - {o.pincode}
                       </td>
                       <td>
-                        <strong>{money(o.total)}</strong>
+                        <strong>{formatOrderTotal(o)}</strong>
+                        <small style={{ display: 'block', color: '#66756c' }}>
+                          Products {money(o.subtotal)} · Shipping {money(o.shipping)}
+                          {Number(o.discount || 0) > 0 ? ` · Offer −${money(o.discount)}` : ''}
+                        </small>
+                        {Number(o.loyalty_discount_paise || 0) > 0 && (
+                          <small style={{ display: 'block', color: '#006f5e' }}>
+                            Loyalty −{formatPaise(o.loyalty_discount_paise)}
+                          </small>
+                        )}
+                        {Number(o.loyalty_coins_earned || 0) > 0 && (
+                          <small style={{ display: 'block', color: '#006f5e' }}>
+                            +{o.loyalty_coins_earned} loyalty coin{Number(o.loyalty_coins_earned) === 1 ? '' : 's'} {String(o.loyalty_earn_status || '').toLowerCase()}
+                          </small>
+                        )}
                         <span
                           className={`status-pill ${
                             o.payment_status === 'paid' ? 'status-pill--paid' : 'status-pill--pending'
@@ -1027,7 +1042,7 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                           <option value="pending">Pending</option>
                           <option value="processing">Processing</option>
                           <option value="shipped">Shipped</option>
-                          <option value="delivered">Delivered</option>
+                          <option value="delivered">{o.payment_method === 'cod' ? 'Delivered (COD collected)' : 'Delivered'}</option>
                           <option value="cancelled">Cancelled</option>
                         </select>
                       </td>
@@ -1884,6 +1899,9 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                     onChange={(e) => setSettings({ ...settings, razorpay_key_secret: e.target.value })}
                   />
                 </label>
+                <small style={{ color: '#66756c' }}>
+                  Razorpay controls which payment methods appear in Checkout. Check Payment Methods in your Razorpay Dashboard if UPI is missing in Test Mode.
+                </small>
               </>
             )}
 

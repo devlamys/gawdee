@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { Order, OrderItem } from '@/types';
 import { money, resolveImageUrl } from '@/lib/utils';
-import { formatCoins, formatPaise } from '@/lib/loyalty';
+import { formatCoins, formatOrderTotal, formatPaise } from '@/lib/loyalty';
 
 export default function OrderTrackingDetailPage() {
   const params = useParams();
@@ -90,7 +90,7 @@ export default function OrderTrackingDetailPage() {
 
             <div style={{ textAlign: 'right' }}>
               <span style={{ fontSize: '0.85rem', color: '#777', display: 'block' }}>Total Paid / Payable</span>
-              <strong style={{ fontSize: '1.8rem', color: '#009a84' }}>{Number.isSafeInteger(order.total_paise) ? formatPaise(order.total_paise as number) : money(order.total)}</strong>
+              <strong style={{ fontSize: '1.8rem', color: '#009a84' }}>{formatOrderTotal(order)}</strong>
             </div>
           </div>
         </div>
@@ -207,7 +207,7 @@ export default function OrderTrackingDetailPage() {
               )}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.1rem', fontWeight: 800, borderTop: '1px solid #eee', paddingTop: '0.6rem', marginTop: '0.4rem' }}>
                 <span>Grand Total</span>
-                <span style={{ color: '#009a84' }}>{Number.isSafeInteger(order.total_paise) ? formatPaise(order.total_paise as number) : money(order.total)}</span>
+                <span style={{ color: '#009a84' }}>{formatOrderTotal(order)}</span>
               </div>
               {((order.loyalty_coins_earned ?? 0) > 0 || (order.loyalty_coins_redeemed ?? 0) > 0) && (
                 <div style={{ borderTop: '1px solid #eee', marginTop: '0.7rem', paddingTop: '0.9rem', color: '#555' }}>

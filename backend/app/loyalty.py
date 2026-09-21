@@ -97,6 +97,32 @@ async def ensure_wallet(db: aiosqlite.Connection, customer_id: int) -> dict:
     return wallet
 
 
+async def spendable_balance(db: aiosqlite.Connection, customer_id: int, wallet: Optional[dict] = None) -> dict:
+    """Compare the wallet cache with immutable ledger and unexpired earning lots."""
+    wallet = wallet or await ensure_wallet(db, customer_id)
+    ledger = await one(
+        db,
+        "SELECT COALESCE(SUM(delta_available),0) AS coins FROM loyalty_transactions WHERE customer_id=?",
+        (customer_id,),
+    )
+    lots = await one(
+        db,
+        """SELECT COALESCE(SUM(available_coins),0) AS coins FROM loyalty_lots
+        WHERE customer_id=? AND (expires_at IS NULL OR expires_at>CURRENT_TIMESTAMP)""",
+        (customer_id,),
+    )
+    wallet_coins = int(wallet["available_coins"])
+    ledger_coins = int(ledger["coins"])
+    lot_coins = int(lots["coins"])
+    return {
+        "available_coins": max(0, min(wallet_coins, ledger_coins, lot_coins)),
+        "wallet_coins": wallet_coins,
+        "ledger_coins": ledger_coins,
+        "lot_coins": lot_coins,
+        "balance_mismatch": wallet_coins != ledger_coins or max(0, ledger_coins) != lot_coins,
+    }
+
+
 async def append_transaction(
     db: aiosqlite.Connection, customer_id: int, transaction_type: str, coins: int,
     delta_available: int, delta_pending: int, delta_reserved: int,
@@ -202,10 +228,8 @@ async def redemption_quote(
         raise ValueError("Coin amount must be a nonnegative integer.")
     config = await loyalty_settings(db)
     lines = line_pricing or await price_loyalty_lines(db, pricing)
-    wallet = await ensure_wallet(db, customer_id)
-    available = max(0, int(wallet["available_coins"]))
-    lot_total = await one(db, "SELECT COALESCE(SUM(available_coins),0) AS coins FROM loyalty_lots WHERE customer_id=? AND (expires_at IS NULL OR expires_at>CURRENT_TIMESTAMP)", (customer_id,))
-    available = min(available, int(lot_total["coins"]))
+    balance = await spendable_balance(db, customer_id)
+    available = balance["available_coins"]
     eligible = int(lines["redeemable_paise"])
     max_coins = 0
     if config["enabled"] and eligible >= config["min_cart_paise"]:
@@ -216,8 +240,12 @@ async def redemption_quote(
         )
         if max_coins < config["min_redemption_coins"]:
             max_coins = 0
-    if requested_coins and (requested_coins < config["min_redemption_coins"] or requested_coins > max_coins):
-        raise ValueError("Requested coins exceed the available or permitted redemption amount.")
+    if requested_coins > available:
+        raise ValueError(f"Only {available} coins are available. Pending coins cannot be redeemed yet.")
+    if requested_coins and requested_coins < config["min_redemption_coins"]:
+        raise ValueError(f"At least {config['min_redemption_coins']} available coins are required to redeem.")
+    if requested_coins > max_coins:
+        raise ValueError("Requested coins exceed the permitted redemption amount for this cart.")
     return {
         "eligible_paise": eligible,
         "available_coins": available,
@@ -257,6 +285,102 @@ async def create_earning_lot(
          0 if pending else coins - debt_offset, debt_offset,
          None if pending else sql_time(utc_now()), expires_at),
     )
+    return True
+
+
+async def apply_admin_adjustment(
+    db: aiosqlite.Connection, customer_id: int, signed_coins: int,
+    reference_id: str, reason: str, admin_id: int,
+) -> bool:
+    """Apply an audited admin adjustment and keep FEFO lots in sync."""
+    if not signed_coins:
+        raise ValueError("Adjustment must contain a nonzero whole coin amount.")
+    transaction_type = "ADMIN_CREDIT" if signed_coins > 0 else "ADMIN_DEBIT"
+    existing = await one(db, "SELECT customer_id,transaction_type,coins,source FROM loyalty_transactions WHERE reference_id=?", (reference_id,))
+    if existing:
+        if (int(existing["customer_id"]) != customer_id or existing["transaction_type"] != transaction_type
+                or int(existing["coins"]) != abs(signed_coins) or existing["source"] != "admin"):
+            raise ValueError("This adjustment reference was already used for a different transaction.")
+        return False
+
+    balance = await spendable_balance(db, customer_id)
+    if balance["balance_mismatch"]:
+        raise ValueError("Wallet, ledger, and coin batches disagree. Reconcile the wallet before adjusting coins.")
+    metadata = {"admin_id": admin_id}
+    if signed_coins > 0:
+        return await create_earning_lot(
+            db, customer_id, signed_coins, transaction_type, reference_id,
+            description=reason, pending=False, source="admin", metadata=metadata,
+        )
+
+    coins = -signed_coins
+    transaction_id = await append_transaction(
+        db, customer_id, transaction_type, coins, -coins, 0, 0,
+        reference_id, "AVAILABLE", source="admin", description=reason,
+        metadata=metadata, allow_negative=True,
+    )
+    if transaction_id is None:
+        return False
+    remaining = min(coins, max(0, balance["wallet_coins"]))
+    lots = await all_rows(
+        db, """SELECT id,available_coins FROM loyalty_lots WHERE customer_id=? AND available_coins>0
+        ORDER BY (expires_at IS NULL),expires_at,id""",
+        (customer_id,),
+    )
+    for lot in lots:
+        used = min(remaining, int(lot["available_coins"]))
+        if used:
+            await db.execute(
+                """UPDATE loyalty_lots SET available_coins=available_coins-?,
+                reversed_coins=reversed_coins+?,updated_at=CURRENT_TIMESTAMP WHERE id=?""",
+                (used, used, lot["id"]),
+            )
+            remaining -= used
+        if remaining == 0:
+            break
+    if remaining:
+        raise ValueError("Coin batches are insufficient for the admin debit.")
+    return True
+
+
+async def reconcile_wallet_cache(
+    db: aiosqlite.Connection, customer_id: int, expected_wallet_coins: int,
+    reference_id: str, reason: str, actor_id: int,
+) -> bool:
+    """Repair a wallet cache from the ledger with an immutable audit entry.
+
+    Call under BEGIN IMMEDIATE after an operator has reviewed the mismatch. Coin
+    batches must already agree with the ledger; this never invents a credit.
+    """
+    balance = await spendable_balance(db, customer_id)
+    if balance["wallet_coins"] != expected_wallet_coins:
+        raise ValueError("Wallet balance changed since reconciliation was reviewed.")
+    if max(0, balance["ledger_coins"]) != balance["lot_coins"]:
+        raise ValueError("Ledger and coin batches disagree; manual investigation is required.")
+    if balance["wallet_coins"] == balance["ledger_coins"]:
+        return False
+    if not reason.strip() or actor_id <= 0:
+        raise ValueError("A reconciliation reason and actor ID are required.")
+    difference = abs(balance["wallet_coins"] - balance["ledger_coins"])
+    transaction_id = await append_transaction(
+        db, customer_id, "RECONCILIATION", difference, 0, 0, 0,
+        reference_id, "AVAILABLE", source="admin", description=reason,
+        metadata={
+            "actor_id": actor_id,
+            "wallet_before": balance["wallet_coins"],
+            "ledger_balance": balance["ledger_coins"],
+            "lot_balance": balance["lot_coins"],
+        }, allow_negative=True,
+    )
+    if transaction_id is None:
+        raise ValueError("Reconciliation reference has already been used.")
+    async with db.execute(
+        """UPDATE loyalty_wallets SET available_coins=?,updated_at=CURRENT_TIMESTAMP
+        WHERE customer_id=? AND available_coins=?""",
+        (balance["ledger_coins"], customer_id, expected_wallet_coins),
+    ) as cur:
+        if cur.rowcount != 1:
+            raise ValueError("Wallet balance changed during reconciliation.")
     return True
 
 
@@ -344,6 +468,7 @@ async def release_due_rewards(db: aiosqlite.Connection, limit: int = 100) -> int
             db, int(lot["customer_id"]), "EARN_RELEASE", coins, coins, -coins, 0,
             f"EARN_RELEASE:LOT:{lot['id']}", "AVAILABLE", order_id=int(lot["order_id"]),
             description=f"Coins from order {lot['order_number']} are available", expires_at=expiry,
+            allow_negative=True,
         )
         if tid is None:
             continue
@@ -369,8 +494,8 @@ async def reserve_coins(
         if int(existing["coins"]) != coins or int(existing["customer_id"]) != customer_id:
             raise ValueError("Checkout loyalty reservation does not match this order.")
         return
-    wallet = await ensure_wallet(db, customer_id)
-    if int(wallet["available_coins"]) < coins:
+    balance = await spendable_balance(db, customer_id)
+    if balance["available_coins"] < coins:
         raise ValueError("There are not enough available coins.")
     lots = await all_rows(
         db, """SELECT * FROM loyalty_lots WHERE customer_id=? AND available_coins>0

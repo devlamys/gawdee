@@ -103,15 +103,33 @@ async def razorpay_configured(db: aiosqlite.Connection) -> bool:
     )
 
 
+def order_payable_paise(order: dict) -> int:
+    """Use the precise order snapshot, with a fallback for pre-loyalty orders."""
+    total_paise = int(order.get("total_paise") or 0)
+    if total_paise or int(order.get("subtotal_paise") or 0) or int(order.get("shipping_paise") or 0):
+        return total_paise
+    return max(0, int(order.get("total") or 0) * 100 - int(order.get("loyalty_discount_paise") or 0))
+
+
+def rupees_from_paise(paise: int) -> str:
+    return f"{paise // 100}.{paise % 100:02d}"
+
+
 async def razorpay_create_order(db: aiosqlite.Connection, amount_rupees: int, receipt: str, notes: dict = {}) -> dict:
-    """Mirrors gawdee_razorpay_create_order."""
+    """Legacy whole-rupee caller; new checkout uses the paise variant."""
+    return await razorpay_create_order_paise(db, amount_rupees * 100, receipt, notes)
+
+
+async def razorpay_create_order_paise(db: aiosqlite.Connection, amount_paise: int, receipt: str, notes: dict = {}) -> dict:
+    if not isinstance(amount_paise, int) or amount_paise < 100:
+        raise RuntimeError("Online payment must be at least ₹1 after discounts.")
     if not await razorpay_configured(db):
         raise RuntimeError("Razorpay is not configured yet. Add the Key ID and Key Secret in Admin > Integrations.")
     response = await http_request(
         "POST",
         f"{settings.RAZORPAY_API_BASE_URL}/v1/orders",
         {"Content-Type": "application/json"},
-        {"amount": amount_rupees * 100, "currency": settings.CURRENCY, "receipt": receipt, "notes": notes},
+        {"amount": amount_paise, "currency": settings.CURRENCY, "receipt": receipt, "notes": notes},
         settings.HTTP_TIMEOUT_SECONDS,
         (await get_setting(db, "razorpay_key_id"), await get_setting(db, "razorpay_key_secret")),
     )
@@ -159,7 +177,7 @@ def razorpay_payment_matches_order(payment: dict, order: dict) -> bool:
     """Mirrors gawdee_razorpay_payment_matches_order."""
     return (
         secrets.compare_digest(str(order["razorpay_order_id"]), str(payment.get("order_id", "")))
-        and int(payment.get("amount", -1)) == int(order["total"]) * 100
+        and int(payment.get("amount", -1)) == order_payable_paise(order)
         and str(payment.get("currency", "")).upper() == settings.CURRENCY
         and str(payment.get("status", "")) == "captured"
     )
@@ -236,7 +254,8 @@ async def trigger_order_event(db: aiosqlite.Connection, order: dict, items: list
             "payment_status": str(order.get("payment_status") or "paid"),
             "whatsapp_order_opt_in": bool(order.get("whatsapp_order_opt_in") or order.get("whatsapp_marketing_opt_in") or False),
             "whatsapp_opted_out": bool(order.get("whatsapp_opted_out") or False),
-            "total": int(order.get("total") or 0),
+            "total": rupees_from_paise(order_payable_paise(order)),
+            "total_paise": order_payable_paise(order),
             "items": [{
                 "product_name": str(item.get("product_name") or item.get("name") or "Item"),
                 "quantity": int(item.get("quantity") or 1),
@@ -371,9 +390,11 @@ async def delhivery_create_shipment(db: aiosqlite.Connection, order: dict, items
             "return_state": await get_setting(db, "delhivery_origin_state"),
             "return_country": "India",
             "products_desc": ", ".join(str(i.get("product_name", i.get("product_id", "Product"))) for i in items)[:500],
-            "cod_amount": int(order["total"]) if payment_mode == "COD" else 0,
+            "cod_amount": (int(order_payable_paise(order) // 100) if order_payable_paise(order) % 100 == 0
+                           else rupees_from_paise(order_payable_paise(order))) if payment_mode == "COD" else 0,
             "order_date": str(order.get("created_at", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))),
-            "total_amount": int(order["total"]),
+            "total_amount": (int(order_payable_paise(order) // 100) if order_payable_paise(order) % 100 == 0
+                             else rupees_from_paise(order_payable_paise(order))),
             "seller_add": origin_address,
             "seller_name": await get_setting(db, "store_name", "Gawdee"),
             "seller_inv": str(order["order_number"]),
@@ -776,12 +797,12 @@ def build_order_whatsapp_payload(order: dict, items: list[dict]) -> dict:
     item_label = f"{product_name} {variant_name}".strip()
     order_number = str(order.get("order_number") or "order").strip()
     customer_name = str(order.get("customer_name") or "Customer").strip() or "Customer"
-    total = int(order.get("total") or 0)
+    total = rupees_from_paise(order_payable_paise(order))
     method = str(order.get("payment_method") or "order").strip() or "order"
 
     text = (
         f"Hi {customer_name}! Your order {order_number} is confirmed. "
-        f"Item: {item_label}. Total: ₹{total:,}. Payment: {method}. "
+        f"Item: {item_label}. Total: ₹{total}. Payment: {method}. "
         "We’ll keep you updated on packing and delivery."
     )
     return {"text": text, "image_url": image_url, "item_name": item_label}
@@ -953,9 +974,10 @@ async def queue_order_notification(db: aiosqlite.Connection, order_id: int, noti
         return False
 
     tracking = order_tracking_reference(order)
+    payable = f"₹{rupees_from_paise(order_payable_paise(order))}"
     templates = {
-        "order_confirmed": ("whatsapp_template_order_confirmed", [order["customer_name"], order["order_number"], f"₹{int(order['total']):,}"]),
-        "payment_confirmed": ("whatsapp_template_payment_confirmed", [order["customer_name"], order["order_number"], f"₹{int(order['total']):,}"]),
+        "order_confirmed": ("whatsapp_template_order_confirmed", [order["customer_name"], order["order_number"], payable]),
+        "payment_confirmed": ("whatsapp_template_payment_confirmed", [order["customer_name"], order["order_number"], payable]),
         "order_packed": ("whatsapp_template_order_packed", [order["customer_name"], order["order_number"]]),
         "order_shipped": ("whatsapp_template_order_shipped", [order["customer_name"], order["order_number"], order.get("courier_name") or "Gawdee delivery", tracking or "Tracking will update shortly"]),
         "order_delivered": ("whatsapp_template_order_delivered", [order["customer_name"], order["order_number"]]),

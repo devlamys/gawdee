@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
 import { Order } from '@/types';
-import { money } from '@/lib/utils';
+import { formatOrderTotal } from '@/lib/loyalty';
 
 export default function AccountPage() {
   const router = useRouter();
@@ -282,7 +282,7 @@ export default function AccountPage() {
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-                      <strong style={{ fontSize: '1.2rem', color: '#009a84' }}>{money(order.total)}</strong>
+                      <strong style={{ fontSize: '1.2rem', color: '#009a84' }}>{formatOrderTotal(order)}</strong>
                       <Link
                         className="button button--secondary"
                         href={`/account/orders/${order.order_number}`}

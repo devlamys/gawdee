@@ -3,11 +3,14 @@ Gawdee FastAPI Backend
 Main application entry point
 """
 
+import asyncio
+
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from .core.config import settings
 from .database import get_db, migrate
+from .loyalty_jobs import loyalty_release_worker
 from .session import get_session, save_session
 from .routers.storefront import router as storefront_router
 from .routers.webhooks import router as webhooks_router
@@ -59,6 +62,18 @@ async def startup():
         await migrate(db)
     finally:
         await db.close()
+    app.state.loyalty_release_task = asyncio.create_task(loyalty_release_worker())
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    task = getattr(app.state, "loyalty_release_task", None)
+    if task is not None:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 # ── Mount routers ─────────────────────────────────────────────────────────────

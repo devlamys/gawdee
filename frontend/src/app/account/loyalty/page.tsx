@@ -111,6 +111,12 @@ export default function LoyaltyPage() {
         </div>
       </div>
 
+      {wallet.balance_review && (
+        <p role="alert" style={{ padding: '1rem', borderRadius: '12px', background: '#fff4e8', color: '#8a3d14' }}>
+          Your loyalty balance needs review. Please contact support before redeeming coins.
+        </p>
+      )}
+
       <section style={{
         background: 'linear-gradient(135deg, #f3fbf8 0%, #ebfff7 100%)',
         border: '1px solid #cfeadf',

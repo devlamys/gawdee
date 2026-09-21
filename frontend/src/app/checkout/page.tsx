@@ -148,7 +148,8 @@ export default function CheckoutPage() {
         coupon_code: appliedCoupon,
         requested_coins: requested,
       });
-      if (!quote.ok || !Number.isSafeInteger(quote.discount_paise) || quote.discount_paise <= 0) {
+      if (!quote.ok || !Number.isSafeInteger(quote.discount_paise) || quote.discount_paise <= 0 ||
+          !Number.isSafeInteger(quote.total_paise) || quote.total_paise < 0) {
         throw new Error('These coins cannot be used on this order.');
       }
       setLoyaltyQuote({ key: requestedForKey, quote });
@@ -235,7 +236,7 @@ export default function CheckoutPage() {
 
         const options = {
           key: rpKeyId,
-          amount: (res.razorpay?.amount || res.total * 100),
+          amount: (res.razorpay?.amount ?? res.total_paise ?? res.total * 100),
           currency: res.razorpay?.currency || 'INR',
           name: res.razorpay?.name || 'Gawdee',
           description: res.razorpay?.description || `Order ${res.order_number}`,
@@ -509,6 +510,11 @@ export default function CheckoutPage() {
                       Available: {loyaltyWallet ? formatCoins(loyaltyWallet.available_coins) : 'Loading…'} coins
                       {loyaltyWallet && ` (${formatPaise(loyaltyWallet.equivalent_paise)})`}. 1 coin = ₹0.01.
                     </p>
+                    {loyaltyWallet?.balance_review && (
+                      <p role="alert" style={{ color: '#a04418', fontSize: '0.85rem' }}>
+                        Your loyalty balance needs review. Please contact support before redeeming coins.
+                      </p>
+                    )}
                     <label htmlFor="loyalty-coins" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.4rem' }}>
                       Coins to redeem
                     </label>
@@ -574,7 +580,7 @@ export default function CheckoutPage() {
                     <i className="ph ph-credit-card" style={{ fontSize: '1.6rem', color: '#009a84' }}></i>
                     <div>
                       <strong style={{ display: 'block' }}>Razorpay Online Payment</strong>
-                      <small style={{ color: '#666' }}>{razorpayAvailable ? 'UPI (GPay, PhonePe, Paytm), Credit/Debit Cards, Netbanking' : 'Online payment is not configured yet'}</small>
+                      <small style={{ color: '#666' }}>{razorpayAvailable ? 'Choose from the payment methods available in Razorpay Checkout' : 'Online payment is not configured yet'}</small>
                     </div>
                   </label>
 
@@ -624,7 +630,7 @@ export default function CheckoutPage() {
                   </>
                 ) : (
                   <>
-                    <span>{appliedLoyaltyQuote ? 'Place Order • total confirmed by server' : `Place Order • ${money(grandTotal)}`}</span>
+                    <span>Place Order • {appliedLoyaltyQuote ? formatPaise(appliedLoyaltyQuote.total_paise) : money(grandTotal)}</span>
                     <i className="ph ph-lock-key"></i>
                   </>
                 )}
@@ -689,11 +695,11 @@ export default function CheckoutPage() {
                 )}
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.2rem', fontWeight: 800, color: '#111', paddingTop: '0.8rem', borderTop: '1px dashed #ddd', marginTop: '0.4rem' }}>
-                  <span>{appliedLoyaltyQuote ? 'Total before loyalty' : 'Grand Total'}</span>
-                  <span style={{ color: '#009a84' }}>{money(grandTotal)}</span>
+                  <span>Grand Total</span>
+                  <span style={{ color: '#009a84' }}>{appliedLoyaltyQuote ? formatPaise(appliedLoyaltyQuote.total_paise) : money(grandTotal)}</span>
                 </div>
 
-                {appliedLoyaltyQuote && <small style={{ color: '#666' }}>Final payable amount is recalculated by the server when you place your order.</small>}
+                {appliedLoyaltyQuote && <small style={{ color: '#666' }}>The server checks this amount again when you place your order.</small>}
 
                 <small style={{ color: '#888', marginTop: '0.4rem' }}>
                   {subtotal >= freeShippingThreshold

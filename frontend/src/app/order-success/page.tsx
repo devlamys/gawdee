@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
 import { Order } from '@/types';
-import { money } from '@/lib/utils';
+import { formatOrderTotal } from '@/lib/loyalty';
 
 function OrderSuccessContent() {
   const searchParams = useSearchParams();
@@ -96,7 +96,7 @@ function OrderSuccessContent() {
             </div>
             <div>
               <span style={{ color: '#888', display: 'block' }}>Order Total</span>
-              <strong>{money(order.total)}</strong>
+              <strong>{formatOrderTotal(order)}</strong>
             </div>
             <div>
               <span style={{ color: '#888', display: 'block' }}>Status</span>

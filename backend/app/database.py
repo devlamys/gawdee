@@ -1248,8 +1248,27 @@ async def migrate_consent_v7(db: aiosqlite.Connection) -> None:
 async def migrate_loyalty_v6(db: aiosqlite.Connection) -> None:
     """Add paise order snapshots to existing databases without rewriting legacy prices."""
     async with db.execute("PRAGMA user_version") as cur:
-        version = int((await cur.fetchone())[0])
-    if version >= 6:
+        row = await cur.fetchone()
+        version = int(row[0]) if row else 0
+    if version >= 6 and await _table_exists(db, "orders"):
+        # Some live databases can have a newer user_version but still be missing
+        # the loyalty columns after an interrupted or partial migration.
+        columns = {
+            "subtotal_paise": "INTEGER NOT NULL DEFAULT 0",
+            "shipping_paise": "INTEGER NOT NULL DEFAULT 0",
+            "discount_paise": "INTEGER NOT NULL DEFAULT 0",
+            "loyalty_discount_paise": "INTEGER NOT NULL DEFAULT 0",
+            "total_paise": "INTEGER NOT NULL DEFAULT 0",
+            "loyalty_eligible_paise": "INTEGER NOT NULL DEFAULT 0",
+            "loyalty_coins_earned": "INTEGER NOT NULL DEFAULT 0",
+            "loyalty_coins_redeemed": "INTEGER NOT NULL DEFAULT 0",
+            "loyalty_earn_status": "TEXT NOT NULL DEFAULT 'NONE'",
+            "loyalty_release_at": "TEXT",
+        }
+        missing = [name for name in columns if not await _column_exists(db, "orders", name)]
+        if not missing:
+            return
+    elif version >= 6:
         return
     columns = {
         "subtotal_paise": "INTEGER NOT NULL DEFAULT 0",

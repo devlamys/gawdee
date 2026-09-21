@@ -10,7 +10,7 @@ from pathlib import Path
 import aiosqlite
 from starlette.requests import Request
 
-from app.commerce import create_local_order, mark_order_paid, mark_payment_failed
+from app.commerce import create_local_order, mark_order_paid, mark_payment_failed, update_order_status
 from app.database import CREATE_TABLES_SQL
 from app.integrations import razorpay_payment_matches_order, razorpay_verify_payment, razorpay_verify_webhook
 from app.routers import storefront, webhooks
@@ -46,8 +46,8 @@ async def make_db(path: Path, stock: int = 4):
     return db
 
 
-async def row(db, sql):
-    async with db.execute(sql) as cur:
+async def row(db, sql, params=()):
+    async with db.execute(sql, params) as cur:
         result = await cur.fetchone()
     return dict(result) if result else None
 
@@ -78,6 +78,51 @@ async def check_short_stock(tmp: Path):
         await db.close()
 
 
+async def check_migration_self_heals_missing_loyalty_columns(tmp: Path):
+    db = await aiosqlite.connect(tmp / 'migration_self_heal.sqlite')
+    db.row_factory = aiosqlite.Row
+    await db.execute('PRAGMA foreign_keys=ON')
+    await db.execute("""
+        CREATE TABLE orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_number TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            payment_method TEXT NOT NULL DEFAULT 'razorpay',
+            payment_status TEXT NOT NULL DEFAULT 'pending',
+            shipment_status TEXT NOT NULL DEFAULT 'awaiting_fulfillment',
+            currency TEXT NOT NULL DEFAULT 'INR',
+            subtotal INTEGER NOT NULL DEFAULT 0,
+            shipping INTEGER NOT NULL DEFAULT 0,
+            discount INTEGER NOT NULL DEFAULT 0,
+            total INTEGER NOT NULL DEFAULT 0,
+            coupon_code TEXT NOT NULL DEFAULT '',
+            checkout_token TEXT NOT NULL DEFAULT '',
+            customer_name TEXT NOT NULL DEFAULT '',
+            email TEXT NOT NULL DEFAULT '',
+            phone TEXT NOT NULL DEFAULT '',
+            address1 TEXT NOT NULL DEFAULT '',
+            address2 TEXT NOT NULL DEFAULT '',
+            city TEXT NOT NULL DEFAULT '',
+            state TEXT NOT NULL DEFAULT '',
+            pincode TEXT NOT NULL DEFAULT '',
+            notes TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    await db.execute('PRAGMA user_version = 7')
+    await db.commit()
+    try:
+        from app.database import migrate_loyalty_v6
+        await migrate_loyalty_v6(db)
+        async with db.execute('PRAGMA table_info(orders)') as cur:
+            columns = [r['name'] for r in await cur.fetchall()]
+        assert 'loyalty_eligible_paise' in columns
+        assert 'loyalty_coins_redeemed' in columns
+    finally:
+        await db.close()
+
+
 async def check_checkout_reservation(tmp: Path):
     db = await make_db(tmp / 'checkout.sqlite')
     fields = {'name': 'Test', 'email': 'test@example.com', 'phone': '919999999999',
@@ -92,6 +137,18 @@ async def check_checkout_reservation(tmp: Path):
         await mark_payment_failed(db, order['id'], 'Gateway order creation failed')
         assert (await row(db, 'SELECT stock FROM variant WHERE id=1'))['stock'] == 4
         assert (await row(db, "SELECT stock FROM products WHERE id='legacy-ghee'"))['stock'] == 4
+    finally:
+        await db.close()
+
+
+async def check_checkout_accepts_item_id(tmp: Path):
+    db = await make_db(tmp / 'itemid_checkout.sqlite')
+    fields = {'name': 'Test', 'email': 'test@example.com', 'phone': '919999999999',
+              'address1': 'Test road', 'city': 'Delhi', 'state': 'Delhi', 'pincode': '110001'}
+    try:
+        order = await create_local_order(db, fields, [{'id': 1, 'quantity': 1}], 'razorpay', None, 'checkouttoken_itemid')
+        assert order['payment_status'] == 'initializing'
+        assert order['total'] == 998
     finally:
         await db.close()
 
@@ -126,6 +183,20 @@ async def check_cod_checkout(tmp: Path):
         assert order['payment_status'] == 'cod_pending'
         assert order['inventory_status'] == 'deducted'
         assert (await row(db, 'SELECT stock FROM variant WHERE id=1'))['stock'] == 2
+    finally:
+        await db.close()
+
+
+async def check_admin_cod_delivery_marks_paid(tmp: Path):
+    db = await make_db(tmp / 'admin_cod_delivery.sqlite')
+    try:
+        order = await create_local_order(db, {'name': 'Test', 'email': 'test@example.com', 'phone': '919999999999',
+                                            'address1': 'Test road', 'city': 'Delhi', 'state': 'Delhi', 'pincode': '110001'},
+                                        [{'id': 'legacy-ghee', 'quantity': 1}], 'cod', None, 'admin_cod_delivery_token')
+        await update_order_status(db, order['id'], 'delivered', 'Delivered and cash received')
+        updated = await row(db, "SELECT status, payment_status FROM orders WHERE id=?", (order['id'],))
+        assert updated['status'] == 'delivered'
+        assert updated['payment_status'] == 'paid'
     finally:
         await db.close()
 
@@ -269,13 +340,18 @@ async def main():
     assert razorpay_payment_matches_order(payment, order)
     assert not razorpay_payment_matches_order({**payment, 'amount': 100}, order)
     assert not razorpay_payment_matches_order({**payment, 'status': 'authorized'}, order)
+    paise_order = {**order, 'total': 379, 'total_paise': 37950, 'subtotal_paise': 40000}
+    assert razorpay_payment_matches_order({**payment, 'amount': 37950}, paise_order)
+    assert not razorpay_payment_matches_order({**payment, 'amount': 37900}, paise_order)
     with tempfile.TemporaryDirectory() as directory:
         tmp = Path(directory)
         await check_late_capture(tmp)
         await check_short_stock(tmp)
         await check_checkout_reservation(tmp)
+        await check_checkout_accepts_item_id(tmp)
         await check_checkout_rollback(tmp)
         await check_cod_checkout(tmp)
+        await check_admin_cod_delivery_marks_paid(tmp)
         await check_gateway_order_and_verify(tmp)
         await check_webhooks(tmp)
     print('Payment checks passed: COD, mocked gateway order/verification, signatures, webhooks, retry, stock rollback and late recovery.')

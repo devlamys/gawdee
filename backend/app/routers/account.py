@@ -16,9 +16,10 @@ Customer-facing account routes:
 """
 
 import re
+import logging
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 import bcrypt
 
 import aiosqlite
@@ -30,10 +31,11 @@ from ..database import (
 )
 from ..commerce import checkout_pricing
 from ..core.config import settings
-from ..loyalty import redemption_quote
+from ..loyalty import redemption_quote, spendable_balance
 from ..session import get_session, set_session_value, clear_session
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _hash_password(plain_password: str) -> str:
@@ -347,14 +349,14 @@ async def customer_order_detail(order_number: str, customer=Depends(get_current_
 # ── Loyalty API for customer wallet and redemption quotes ────────────────────
 
 class LoyaltyQuoteLine(BaseModel):
-    id: str
-    quantity: int = 1
+    id: str = Field(min_length=1)
+    quantity: int = Field(default=1, ge=1, le=settings.CHECKOUT_MAX_QTY)
 
 
 class LoyaltyQuoteRequest(BaseModel):
     items: list[LoyaltyQuoteLine]
     coupon_code: str = ""
-    requested_coins: int = 0
+    requested_coins: int = Field(default=0, ge=0)
 
 
 @router.get("/loyalty/wallet")
@@ -373,6 +375,12 @@ async def loyalty_wallet(customer=Depends(get_current_customer), db: aiosqlite.C
         ) as cur:
             wallet = await cur.fetchone()
     wallet = dict(wallet)
+    balance = await spendable_balance(db, int(customer["id"]), wallet)
+    if balance["balance_mismatch"]:
+        logger.error(
+            "Loyalty balance mismatch for customer %s: wallet=%s ledger=%s lots=%s",
+            customer["id"], balance["wallet_coins"], balance["ledger_coins"], balance["lot_coins"],
+        )
     async with db.execute(
         "SELECT COALESCE(SUM(available_coins),0) AS expiring_soon FROM loyalty_lots WHERE customer_id=? AND expires_at IS NOT NULL AND expires_at <= datetime('now', '+30 days')",
         (int(customer["id"]),),
@@ -380,15 +388,16 @@ async def loyalty_wallet(customer=Depends(get_current_customer), db: aiosqlite.C
         expiring_row = await cur.fetchone()
     expiring_soon = int(expiring_row["expiring_soon"] if expiring_row is not None and "expiring_soon" in expiring_row.keys() else 0)
     response = {
-        "available_coins": int(wallet["available_coins"]),
+        "available_coins": balance["available_coins"],
         "pending_coins": int(wallet["pending_coins"]),
         "reserved_coins": int(wallet["reserved_coins"]),
         "lifetime_earned": int(wallet["lifetime_earned"]),
         "lifetime_redeemed": int(wallet["lifetime_redeemed"]),
         "lifetime_expired": int(wallet["lifetime_expired"]),
         "lifetime_reversed": int(wallet["lifetime_reversed"]),
-        "equivalent_paise": int(wallet["available_coins"]),
+        "equivalent_paise": balance["available_coins"],
         "expiring_soon_coins": expiring_soon,
+        "balance_review": balance["balance_mismatch"],
     }
     return {"ok": True, "wallet": response}
 
@@ -414,13 +423,16 @@ async def loyalty_transactions(customer=Depends(get_current_customer), db: aiosq
 async def calculate_redemption(payload: LoyaltyQuoteRequest, customer=Depends(get_current_customer), db: aiosqlite.Connection = Depends(db_dep)):
     if not payload.items:
         raise HTTPException(status_code=422, detail={"message": "Choose at least one product to calculate loyalty redemption."})
-    pricing = await checkout_pricing(db, [{"id": item.id, "quantity": item.quantity} for item in payload.items], payload.coupon_code or "")
-    quote = await redemption_quote(
-        db,
-        int(customer["id"]),
-        pricing,
-        requested_coins=int(payload.requested_coins or 0),
-    )
+    try:
+        pricing = await checkout_pricing(db, [{"id": item.id, "quantity": item.quantity} for item in payload.items], payload.coupon_code or "")
+        quote = await redemption_quote(
+            db,
+            int(customer["id"]),
+            pricing,
+            requested_coins=payload.requested_coins,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"message": str(exc)}) from exc
     response = {
         "ok": True,
         "eligible_paise": int(quote["eligible_paise"]),
@@ -428,6 +440,10 @@ async def calculate_redemption(payload: LoyaltyQuoteRequest, customer=Depends(ge
         "max_redeemable_coins": int(quote["max_redeemable_coins"]),
         "requested_coins": int(quote["requested_coins"]),
         "discount_paise": int(quote["discount_paise"]),
+        "subtotal_paise": int(pricing["subtotal"]) * 100,
+        "shipping_paise": int(pricing["shipping"]) * 100,
+        "coupon_discount_paise": int(pricing["discount"]) * 100,
+        "total_paise": int(pricing["total"]) * 100 - int(quote["discount_paise"]),
         "lines": quote.get("lines", []),
     }
     return response

@@ -11,3 +11,19 @@ export function formatPaise(paise: number): string {
 export function formatCoins(coins: number): string {
   return Number.isSafeInteger(coins) ? coins.toLocaleString('en-IN') : '0';
 }
+
+/** Orders created before paise snapshots may still contain the pre-coin rupee total. */
+export function formatOrderTotal(order: {
+  total: number;
+  total_paise?: number;
+  subtotal_paise?: number;
+  shipping_paise?: number;
+  loyalty_discount_paise?: number;
+}): string {
+  const snapshot = order.total_paise;
+  if (Number.isSafeInteger(snapshot) && ((snapshot ?? 0) > 0 ||
+    (order.subtotal_paise ?? 0) > 0 || (order.shipping_paise ?? 0) > 0)) {
+    return formatPaise(snapshot as number);
+  }
+  return formatPaise(Math.max(0, order.total * 100 - (order.loyalty_discount_paise ?? 0)));
+}

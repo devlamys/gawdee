@@ -21,6 +21,8 @@ from .database import (
     log_integration,
     get_variant_by_ref,
     get_item_by_id,
+    get_item_by_slug,
+    get_variants_for_item,
     map_variant_row,
     resolve_variant_identity,
     get_variant_stock,
@@ -30,7 +32,10 @@ from .database import (
     resolve_combo_product,
     combo_available_stock,
 )
-from .loyalty import create_pending_purchase_reward, price_loyalty_lines, redeem_reservation, reserve_coins
+from .loyalty import (
+    allocate_discount, create_pending_purchase_reward, price_loyalty_lines,
+    redeem_reservation, redemption_quote, reserve_coins,
+)
 from .core.config import settings
 
 
@@ -59,6 +64,18 @@ ORDER_STATUS_TRANSITIONS = {
 
 # ── Pricing ──────────────────────────────────────────────────────────────────
 
+async def _checkout_variant_product(db: aiosqlite.Connection, item: dict, variant: dict) -> dict:
+    product = map_variant_row(item, variant)
+    if int(product["price"]) <= 0 and product.get("legacy_product_id"):
+        legacy = await get_product_by_id(db, str(product["legacy_product_id"]))
+        if legacy:
+            product["price"] = int(legacy["price"])
+            product["original_price"] = int(legacy["original_price"])
+    if int(product["price"]) <= 0:
+        raise ValueError("A product in the cart has no valid selling price.")
+    return product
+
+
 async def checkout_pricing(db: aiosqlite.Connection, requested_items: list[dict], coupon_code: str = "") -> dict:
     """Mirrors gawdee_checkout_pricing."""
     if not requested_items or len(requested_items) > settings.CHECKOUT_MAX_ITEMS:
@@ -67,24 +84,44 @@ async def checkout_pricing(db: aiosqlite.Connection, requested_items: list[dict]
     items = []
     subtotal = 0
     for req in requested_items:
-        prod_id = str(req.get("id", ""))
-        product = await get_product_by_id(db, prod_id)
-        if product:
-            # Legacy product rows can mirror a canonical variant. Use its
-            # stock for pricing and reservation so both views stay aligned.
-            canonical = await get_variant_by_ref(db, prod_id, True)
-            if canonical:
-                if not canonical["is_active"] or not canonical["item_is_active"]:
-                    raise ValueError("A product in the cart is no longer available.")
-                product = {**product, "variant_id": canonical["id"],
-                           "legacy_product_id": canonical.get("legacy_product_id") or "",
-                           "item_id": canonical["item_id"]}
+        raw_id = req.get("id")
+        prod_id = str(raw_id if raw_id is not None else "")
+        product = None
+
+        if raw_id not in (None, ""):
+            if isinstance(raw_id, int) and raw_id > 0:
+                product = await get_item_by_id(db, int(raw_id))
+                if product:
+                    variants = await get_variants_for_item(db, int(product["id"]), include_inactive=True)
+                    if variants:
+                        variant = next((v for v in variants if int(v.get("is_active", 1)) == 1), variants[0])
+                        if variant:
+                            product = await _checkout_variant_product(db, product, variant)
+            if not product:
+                product = await get_product_by_id(db, prod_id)
+            if product:
+                canonical = await get_variant_by_ref(db, prod_id, True)
+                if canonical:
+                    if not canonical["is_active"] or not canonical["item_is_active"]:
+                        raise ValueError("A product in the cart is no longer available.")
+                    product = {**product, "variant_id": canonical["id"],
+                               "legacy_product_id": canonical.get("legacy_product_id") or "",
+                               "item_id": canonical["item_id"]}
         if not product:
             var = await get_variant_by_ref(db, prod_id, False)
             if var:
                 item = await get_item_by_id(db, var["item_id"])
                 if item:
-                    product = map_variant_row(item, var)
+                    product = await _checkout_variant_product(db, item, var)
+        if not product:
+            # Treat an item ID / slug as a direct catalog item anchor when no variant row exists yet.
+            item = await get_item_by_id(db, int(prod_id)) if str(prod_id).isdigit() else await get_item_by_slug(db, prod_id)
+            if item:
+                variants = await get_variants_for_item(db, int(item["id"]), include_inactive=True)
+                if variants:
+                    variant = next((v for v in variants if int(v.get("is_active", 1)) == 1), variants[0])
+                    if variant:
+                        product = await _checkout_variant_product(db, item, variant)
         if not product and prod_id.startswith("combo-"):
             # Curated bundle (`combos` table): charged at its own combo price,
             # stock gated by the scarcest backing product.
@@ -92,6 +129,8 @@ async def checkout_pricing(db: aiosqlite.Connection, requested_items: list[dict]
         quantity = min(settings.CHECKOUT_MAX_QTY, max(1, int(req.get("quantity") or req.get("qty") or 1)))
         if not product:
             raise ValueError("A product in the cart is no longer available.")
+        if int(product["price"]) <= 0:
+            raise ValueError("A product in the cart has no valid selling price.")
         identity = resolve_variant_identity(product)
         available = None
         if identity.get("variant_id"):
@@ -140,9 +179,38 @@ async def create_local_order(
     coupon_code: str = "",
     loyalty_coins: int = 0,
 ) -> dict:
+    # Reserve a SQLite write slot before checking the token and wallet, so two
+    # checkouts cannot both quote the same available coin balance.
+    if not db.in_transaction:
+        await db.execute("BEGIN IMMEDIATE")
+    try:
+        order = await _create_local_order_locked(
+            db, fields, requested_items, payment_method, user_id,
+            checkout_token, coupon_code, loyalty_coins,
+        )
+        if db.in_transaction:
+            await db.commit()
+        return order
+    except Exception:
+        await db.rollback()
+        raise
+
+
+async def _create_local_order_locked(
+    db: aiosqlite.Connection,
+    fields: dict,
+    requested_items: list[dict],
+    payment_method: str,
+    user_id: Optional[int],
+    checkout_token: str,
+    coupon_code: str = "",
+    loyalty_coins: int = 0,
+) -> dict:
     """Mirrors gawdee_create_local_order."""
     payment_method = "cod" if payment_method == "cod" else "razorpay"
-    loyalty_coins = max(0, int(loyalty_coins or 0))
+    loyalty_coins = int(loyalty_coins or 0)
+    if loyalty_coins < 0:
+        raise ValueError("Coins to redeem must be a nonnegative whole number.")
     if not re.match(r"^[A-Za-z0-9_-]{16,100}$", checkout_token):
         raise ValueError("Checkout session is invalid. Refresh the checkout page and try again.")
 
@@ -150,11 +218,28 @@ async def create_local_order(
         existing = await cur.fetchone()
     if existing:
         order = dict(existing)
+        if (order["user_id"] != user_id or order["payment_method"] != payment_method
+                or str(order["email"]).lower() != str(fields["email"]).lower()
+                or int(order["loyalty_coins_redeemed"] or 0) != loyalty_coins):
+            raise ValueError("This checkout session belongs to a different order. Refresh checkout to start again.")
         order["is_duplicate"] = True
         return order
 
     pricing = await checkout_pricing(db, requested_items, coupon_code)
     line_pricing = await price_loyalty_lines(db, pricing)
+    if loyalty_coins:
+        if user_id is None:
+            raise ValueError("Sign in before redeeming loyalty coins.")
+        await redemption_quote(db, int(user_id), pricing, loyalty_coins, line_pricing)
+    subtotal_paise = int(pricing["subtotal"]) * 100
+    shipping_paise = int(pricing["shipping"]) * 100
+    discount_paise = int(pricing["discount"]) * 100
+    total_paise = subtotal_paise + shipping_paise - discount_paise - loyalty_coins
+    if total_paise < 0:
+        raise ValueError("Loyalty discount cannot exceed the payable amount.")
+    redeemed_allocations = allocate_discount(
+        [int(line["redeemable_paise"]) for line in line_pricing["lines"]], loyalty_coins,
+    )
     order_number = "GD" + datetime.now().strftime("%y%m%d") + secrets.token_hex(3).upper()
     status = "processing" if payment_method == "cod" else "pending"
     payment_status = "cod_pending" if payment_method == "cod" else "initializing"
@@ -197,14 +282,16 @@ async def create_local_order(
         await db.execute(
             """INSERT INTO orders
             (user_id, order_number, status, payment_method, payment_status, shipment_status, currency,
-             subtotal, shipping, discount, total, coupon_code, checkout_token,
+             subtotal, shipping, discount, total, subtotal_paise, shipping_paise, discount_paise,
+             total_paise, coupon_code, checkout_token,
              customer_name, email, phone, address1, address2, city, state, pincode, notes,
              fulfillment_mode, inventory_status, loyalty_eligible_paise, loyalty_discount_paise, loyalty_coins_redeemed)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 user_id, order_number, status, payment_method, payment_status,
                 "awaiting_fulfillment", settings.CURRENCY,
-                pricing["subtotal"], pricing["shipping"], pricing["discount"], pricing["total"],
+                pricing["subtotal"], pricing["shipping"], pricing["discount"], total_paise // 100,
+                subtotal_paise, shipping_paise, discount_paise, total_paise,
                 pricing["coupon_code"], checkout_token,
                 fields["name"], fields["email"], fields["phone"],
                 fields["address1"], fields.get("address2", ""),
@@ -219,7 +306,7 @@ async def create_local_order(
             order_id = (await cur.fetchone())[0]
 
         # Insert items and deduct stock
-        for line in pricing["items"]:
+        for line_index, line in enumerate(pricing["items"]):
             product = line["product"]
             quantity = line["quantity"]
             await db.execute(
@@ -229,10 +316,10 @@ async def create_local_order(
             async with db.execute("SELECT last_insert_rowid()") as cur:
                 item_id = int((await cur.fetchone())[0])
             # keep the row in sync with the loyalty pricing snapshot for earnings / redemption calculations.
-            line_snapshot = next((entry for entry in line_pricing["lines"] if str(entry["product_id"]) == str(product["id"])), None)
+            line_snapshot = line_pricing["lines"][line_index]
             if line_snapshot and user_id is not None:
                 await db.execute(
-                    "INSERT INTO loyalty_order_lines (order_item_id, order_id, customer_id, quantity, gross_paise, coupon_discount_paise, eligible_paise, redeemable_paise, multiplier, earn_excluded, redeem_excluded) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO loyalty_order_lines (order_item_id, order_id, customer_id, quantity, gross_paise, coupon_discount_paise, eligible_paise, redeemable_paise, redeemed_coins_allocated, multiplier, earn_excluded, redeem_excluded) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         item_id,
                         order_id,
@@ -242,6 +329,7 @@ async def create_local_order(
                         int(line_snapshot.get("coupon_discount_paise", 0)),
                         int(line_snapshot.get("eligible_paise", 0)),
                         int(line_snapshot.get("redeemable_paise", 0)),
+                        int(redeemed_allocations[line_index]),
                         int(line_snapshot.get("multiplier", 1)),
                         int(1 if line_snapshot.get("earn_excluded") else 0),
                         int(1 if line_snapshot.get("redeem_excluded") else 0),
@@ -344,6 +432,27 @@ async def update_order_status(db: aiosqlite.Connection, order_id: int, new_statu
     if not order:
         raise ValueError("Order not found.")
     if order["status"] == new_status:
+        # Older admin status updates changed the delivery label without running
+        # the COD collection and loyalty hooks. Reapplying Delivered repairs such
+        # an order once; the reward reference keeps the operation idempotent.
+        if (new_status == "delivered" and order["payment_method"] == "cod"
+                and order["payment_status"] == "cod_pending"):
+            await db.execute(
+                """UPDATE orders SET payment_status='paid',
+                   paid_at=COALESCE(paid_at, fulfilled_at, CURRENT_TIMESTAMP),
+                   fulfilled_at=COALESCE(fulfilled_at, CURRENT_TIMESTAMP),
+                   updated_at=CURRENT_TIMESTAMP
+                   WHERE id=? AND status='delivered' AND payment_status='cod_pending'""",
+                (order_id,),
+            )
+            await create_pending_purchase_reward(db, order_id)
+            from .loyalty import schedule_order_release
+            await schedule_order_release(db, order_id)
+            await record_order_event(
+                db, order_id, "delivered", "COD payment confirmed",
+                "Cash on delivery collection confirmed; loyalty reward is pending its release date.",
+            )
+            await db.commit()
         return
     if new_status not in order_allowed_transitions(order):
         raise ValueError(f"That workflow change is not allowed from {order['status'].replace('_', ' ')}.")
@@ -362,7 +471,7 @@ async def update_order_status(db: aiosqlite.Connection, order_id: int, new_statu
     shipment_status = shipment_map.get(new_status, order["shipment_status"])
     payment_status = order["payment_status"]
     extra_cols = ""
-    if new_status == "delivered" and order["payment_method"] == "cod" and payment_status != "paid":
+    if new_status == "delivered" and order["payment_method"] == "cod" and payment_status == "cod_pending":
         payment_status = "paid"
         extra_cols += ", paid_at=CURRENT_TIMESTAMP"
     if new_status == "refunded":
@@ -376,6 +485,9 @@ async def update_order_status(db: aiosqlite.Connection, order_id: int, new_statu
         f"UPDATE orders SET status=?, shipment_status=?, payment_status=?, admin_note=?, updated_at=CURRENT_TIMESTAMP{extra_cols} WHERE id=?",
         (new_status, shipment_status, payment_status, note[:500], order_id),
     )
+
+    if new_status == "delivered" and order["payment_method"] == "cod" and order["user_id"] is not None:
+        await create_pending_purchase_reward(db, order_id)
 
     titles = {
         "processing": "Order confirmed", "packed": "Packed with care", "shipped": "Shipment dispatched",

@@ -25,6 +25,10 @@ export interface LoyaltyAdminWallet {
   customer_name?: string;
   customer_email?: string;
   available_coins: number;
+  spendable_coins?: number;
+  ledger_available_coins?: number;
+  lot_available_coins?: number;
+  balance_mismatch?: boolean;
   pending_coins: number;
   reserved_coins: number;
   lifetime_earned: number;
@@ -57,6 +61,7 @@ export interface LoyaltyAdminReports {
   loyalty_discount_paise: number;
   referral_rewards: number;
   promotional_rewards: number;
+  balance_mismatch_count?: number;
 }
 
 export interface LoyaltyProductRestriction {

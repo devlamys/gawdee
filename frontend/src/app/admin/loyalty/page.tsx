@@ -291,6 +291,7 @@ export default function AdminLoyaltyPage() {
             <ReportCard label="Loyalty discounts" value={rupeesFromPaise(reports.loyalty_discount_paise)} icon="ph-currency-inr" />
             <ReportCard label="Referral rewards" value={coins(reports.referral_rewards)} icon="ph-user-plus" />
             <ReportCard label="Promotional rewards" value={coins(reports.promotional_rewards)} icon="ph-gift" />
+            {!!reports.balance_mismatch_count && <ReportCard label="Wallets needing review" value={coins(reports.balance_mismatch_count)} icon="ph-warning" note="Ledger and coin batches disagree" />}
           </div>
         </section>
       )}
@@ -324,6 +325,11 @@ export default function AdminLoyaltyPage() {
           {searchPerformed && wallets.length === 0 && <p className="loyalty-muted">No matching wallets found.</p>}
           {wallet && <div className="loyalty-wallet-detail">
             <h3>{wallet.customer_name || `Customer #${wallet.customer_id}`}{wallet.customer_email && <small> · {wallet.customer_email}</small>}</h3>
+            {wallet.balance_mismatch && (
+              <p role="alert" style={{ padding: '1rem', borderRadius: '12px', background: '#fff4e8', color: '#8a3d14' }}>
+                Wallet review required: recorded {coins(wallet.available_coins)} coins, ledger {coins(wallet.ledger_available_coins)}, spendable batches {coins(wallet.lot_available_coins)}. Customer can redeem {coins(wallet.spendable_coins)} coins. Resolve this mismatch before adjusting the wallet.
+              </p>
+            )}
             <div className="loyalty-wallet-grid">
               <div><span>Available</span><strong>{coins(wallet.available_coins)}</strong><small>{rupeesFromPaise(wallet.available_coins)}</small></div>
               <div><span>Pending</span><strong>{coins(wallet.pending_coins)}</strong></div>
