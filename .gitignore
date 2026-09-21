@@ -162,6 +162,8 @@ skills-lock.json
 .agents/skills/writing-shape/SKILL.md
 .agents/skills/writing-shape/agents/openai.yaml
 /sqlite
+*.sqlite
 *.db
 *.sqlite3
+backend/storage/gawdee.sqlite
 backend/storage/gawdee.sqlite

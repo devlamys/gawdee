@@ -24,11 +24,11 @@ export interface NewHomePageProps {
  * certifications → #combos → #reviews → #faq. Header/footer come from StorefrontShell.
  */
 export function NewHomePage(props: NewHomePageProps) {
-  const { items, testimonials, storeSettings } = props;
+  const { items, categories, testimonials, storeSettings } = props;
   return (
     <>
       <NhpHero storeSettings={storeSettings} />
-      <NhpExplore items={items} />
+      <NhpExplore items={items} categories={categories} />
       <NhpWhyGawdee />
       <NhpShopByNeed items={items} />
       <NhpLabTested />

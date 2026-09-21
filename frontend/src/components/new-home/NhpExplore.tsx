@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { CatalogItem, Combo } from '@/types';
+import { CatalogCategory, CatalogItem, Combo } from '@/types';
 import { api } from '@/lib/api';
 import { useCart } from '@/context/CartContext';
 import { money, resolveImageUrl } from '@/lib/utils';
 import {
+  exploreTabVisual,
   firstValidVariant,
   isVariantAvailable,
   itemCardImage,
@@ -21,20 +22,47 @@ interface ExploreTab {
   icon: string;
   /** lowercase keywords matched against categoryKey/category/tag/name */
   keywords: string[];
+  kind: 'all' | 'category' | 'combos' | 'best';
+  categoryId?: number | null;
+  filter?: string;
 }
 
-const TABS: ExploreTab[] = [
-  { key: 'all', label: 'All', icon: 'ph-squares-four', keywords: [] },
-  { key: 'ghee', label: 'A2 Ghee', icon: 'ph-bowl-steam', keywords: ['ghee'] },
-  { key: 'nutrition', label: 'Nutritions', icon: 'ph-grains', keywords: ['nutrition', 'mixme', 'moringa'] },
-  { key: 'wellness', label: 'Wellness', icon: 'ph-leaf', keywords: ['wellness'] },
-  { key: 'honey', label: 'Raw Honey', icon: 'ph-drop', keywords: ['honey'] },
-  { key: 'combos', label: 'Combos', icon: 'ph-gift', keywords: ['combo', 'duo', 'bundle'] },
-  { key: 'best', label: 'Best Sellers 🔥', icon: 'ph-fire', keywords: ['best', 'top rated', 'bestseller'] },
+/** Fixed special tabs; category tabs are injected dynamically between All and Combos. */
+const SPECIAL_TABS: ExploreTab[] = [
+  { key: 'all', label: 'All', icon: 'ph-squares-four', keywords: [], kind: 'all' },
+  { key: 'combos', label: 'Combos', icon: 'ph-gift', keywords: ['combo', 'duo', 'bundle'], kind: 'combos' },
+  { key: 'best', label: 'Best Sellers 🔥', icon: 'ph-fire', keywords: ['best', 'top rated', 'bestseller'], kind: 'best' },
 ];
 
+function buildTabs(categories: CatalogCategory[]): ExploreTab[] {
+  const tabs: ExploreTab[] = [SPECIAL_TABS[0]];
+  const seen = new Set(['all']);
+  for (const c of categories) {
+    if ((c.isActive ?? 1) === 0) continue;
+    const key = (c.filter || '').toLowerCase().trim() || `cat-${c.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    tabs.push({
+      key,
+      label: c.name,
+      icon: (c.icon || '').trim() || 'ph-squares-four',
+      keywords: [],
+      kind: 'category',
+      categoryId: c.id,
+      filter: c.filter,
+    });
+  }
+  tabs.push(SPECIAL_TABS[1], SPECIAL_TABS[2]);
+  return tabs;
+}
+
 function matchesTab(item: CatalogItem, tab: ExploreTab): boolean {
-  if (tab.key === 'all') return true;
+  if (tab.kind === 'all') return true;
+  if (tab.kind === 'category') {
+    if (tab.categoryId != null && (item.categoryId ?? null) === tab.categoryId) return true;
+    const f = (tab.filter || tab.key).toLowerCase();
+    return (item.categoryKey || '').toLowerCase() === f;
+  }
   const haystack = `${item.categoryKey || ''} ${item.category || ''} ${item.tag || ''} ${item.name || ''}`.toLowerCase();
   return tab.keywords.some((kw) => haystack.includes(kw));
 }
@@ -112,13 +140,12 @@ function NhpProductCard({ item }: { item: CatalogItem }) {
           <p className="nhp-combo__category">{badgeText}</p>
         )}
         <h3 className="nhp-card__title">
-          <Link href={`/products/${item.slug}`}>{item.name}</Link>
+          <Link href={`/products/${item.slug}`}>{item.name} - {selected.variantName}</Link>
         </h3>
-        <p className="nhp-card__pack">{selected.variantName}</p>
         {item.description && (
           <>
             <p className="nhp-card__desc nhp-card__desc--desktop" style={{ fontSize: '0.85rem', color: '#7a8a80', marginTop: '2px', margin: 0, textAlign: 'justify' }}>
-              {item.description.length > 300 ? `${item.description.substring(0, 300)}...` : item.description}
+              {item.description.length > 200 ? `${item.description.substring(0, 200)}...` : item.description}
             </p>
             <p className="nhp-card__desc nhp-card__desc--mobile" style={{ fontSize: '0.85rem', color: '#7a8a80', marginTop: '2px', margin: 0, textAlign: 'justify' }}>
               {item.description.length > 151 ? `${item.description.substring(0, 151)}...` : item.description}
@@ -212,13 +239,12 @@ function NhpExploreComboCard({ combo }: { combo: Combo }) {
 
       <div className="nhp-card__body">
         <h3 className="nhp-card__title">
-          <Link href={href}>{combo.title}</Link>
+          <Link href={href}>{combo.title} - {combo.category || 'Gawdee Combo'}</Link>
         </h3>
-        <p className="nhp-card__pack">{combo.category || 'Gawdee Combo'}</p>
         {(combo.details || combo.description) && (
           <p className="nhp-card__desc nhp-card__desc--desktop" style={{ fontSize: '0.85rem', color: '#7a8a80', marginTop: '2px', margin: 0, textAlign: 'justify' }}>
-            {(combo.details || combo.description).length > 300
-              ? `${(combo.details || combo.description).substring(0, 300)}...`
+            {(combo.details || combo.description).length > 200
+              ? `${(combo.details || combo.description).substring(0, 200)}...`
               : (combo.details || combo.description)}
           </p>
         )}
@@ -247,7 +273,7 @@ function NhpExploreComboCard({ combo }: { combo: Combo }) {
   );
 }
 
-export function NhpExplore({ items }: { items: CatalogItem[] }) {
+export function NhpExplore({ items, categories = [] }: { items: CatalogItem[]; categories?: CatalogCategory[] }) {
   const [activeTab, setActiveTab] = useState('all');
   const [combos, setCombos] = useState<Combo[]>([]);
 
@@ -266,10 +292,40 @@ export function NhpExplore({ items }: { items: CatalogItem[] }) {
     };
   }, []);
 
+  const tabs = useMemo(() => buildTabs(categories), [categories]);
+
   const filtered = useMemo(() => {
-    const tab = TABS.find((t) => t.key === activeTab) ?? TABS[0];
-    return items.filter((item) => matchesTab(item, tab)).slice(0, 8);
-  }, [items, activeTab]);
+    const tab = tabs.find((t) => t.key === activeTab) ?? tabs[0];
+    const matchingItems = items.filter((item) => matchesTab(item, tab));
+    
+    // Flatten into individual variants
+    const allVariants: (CatalogItem & { _variantKey: string })[] = [];
+    matchingItems.forEach(item => {
+      const activeVariants = (item.variants || []).filter(v => v.isActive !== 0);
+      if (activeVariants.length === 0) {
+        allVariants.push({ ...item, _variantKey: `item-${item.id}` });
+      } else {
+        activeVariants.forEach(v => {
+          allVariants.push({
+            ...item,
+            _variantKey: `variant-${v.id}`,
+            variants: [v] // Force single variant so NhpProductCard doesn't show dropdown
+          });
+        });
+      }
+    });
+
+    // Sort by category alphabetically
+    allVariants.sort((a, b) => {
+      const catA = (a.category || '').toLowerCase();
+      const catB = (b.category || '').toLowerCase();
+      if (catA < catB) return -1;
+      if (catA > catB) return 1;
+      return 0;
+    });
+
+    return allVariants;
+  }, [items, tabs, activeTab]);
 
   const isCombosTab = activeTab === 'combos';
 
@@ -280,7 +336,7 @@ export function NhpExplore({ items }: { items: CatalogItem[] }) {
         <p className="nhp-explore__sub">Traditional staples, thoughtfully made for everyday Indian homes.</p>
 
         <div className="nhp-tabs" role="tablist" aria-label="Filter products by collection">
-          {TABS.map((tab) => (
+          {tabs.map((tab) => (
             <button
               key={tab.key}
               type="button"
@@ -290,7 +346,14 @@ export function NhpExplore({ items }: { items: CatalogItem[] }) {
               onClick={() => setActiveTab(tab.key)}
             >
               <span className="nhp-tab-icon">
-                <i className={`ph ${tab.icon}`} aria-hidden="true"></i>
+                {(() => {
+                  const visual = exploreTabVisual(tab, categories);
+                  return visual.kind === 'image' ? (
+                    <img src={resolveImageUrl(visual.src)} alt="" aria-hidden="true" style={{ width: '1.4em', height: '1.4em', objectFit: 'contain' }} />
+                  ) : (
+                    <i className={visual.className} aria-hidden="true"></i>
+                  );
+                })()}
               </span>
               <span className="nhp-tab-label">{tab.label}</span>
             </button>
@@ -324,7 +387,7 @@ export function NhpExplore({ items }: { items: CatalogItem[] }) {
         ) : (
           <div className="nhp-grid" aria-label="Products">
             {filtered.map((item) => (
-              <NhpProductCard key={item.id} item={item} />
+              <NhpProductCard key={(item as any)._variantKey} item={item} />
             ))}
           </div>
         )}

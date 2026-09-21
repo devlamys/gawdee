@@ -73,13 +73,13 @@ a {
   }
 }
 
-/* Ensure roughly 2.5 cards per screen in the nhp-grid horizontal carousel on mobile */
+/* Ensure roughly 1.7 cards on a 376px screen with a fixed width */
 @media (max-width: 640px) {
   .nhp-grid .nhp-combo,
   .nhp-grid .nhp-card {
-    flex: 0 0 calc(38vw - 10px) !important;
-    max-width: calc(38vw - 10px) !important;
-    min-width: calc(38vw - 10px) !important;
+    flex: 0 0 195px !important;
+    max-width: 195px !important;
+    min-width: 195px !important;
   }
 }
 
@@ -96,4 +96,33 @@ a {
   .nhp-card__price-wrap {
     gap: 0 !important;
   }
+  
+  /* Reduce size of tabs */
+  .nhp-tab {
+    gap: 8px !important;
+    font-size: 0.75rem !important;
+  }
+  .nhp-tab-icon {
+    width: 48px !important;
+    height: 48px !important;
+    font-size: 1.2rem !important;
+  }
+
+  /* Reduce commerce header top margin on mobile while preserving scroll animation */
+  .commerce-header:not(.is-scrolled) .commerce-header__main {
+    margin-top: 41px !important;
+  }
+}
+
+/* Apply Figtree font to product card prices */
+.nhp-card__price,
+.nhp-combo__price {
+  font-family: 'Figtree', sans-serif !important;
+}
+
+/* Reduce size of the Add button slightly */
+.nhp-card__add {
+  padding: 6px 14px !important;
+  font-size: 0.85rem !important;
+  min-height: 32px !important;
 }

@@ -9,7 +9,7 @@ import { useCart } from '@/context/CartContext';
 import { money, resolveImageUrl } from '@/lib/utils';
 import { normalizeCategory } from '@/lib/products-data';
 import {
-  categoryIcon,
+  categoryVisual,
   isVariantAvailable,
   variantCardImages,
   variantCartLine,
@@ -267,11 +267,11 @@ function CatalogContent() {
   };
 
   const pills = useMemo(() => {
-    const list = [{ key: 'all', label: 'All Products', icon: categoryIcon('all') }];
+    const list = [{ key: 'all', label: 'All Products', visual: categoryVisual(null, 'all') }];
     for (const c of categories) {
       const key = (c.filter || '').toLowerCase() || `cat-${c.id}`;
       if (list.some((p) => p.key === key)) continue;
-      list.push({ key, label: c.name, icon: categoryIcon(c.filter) });
+      list.push({ key, label: c.name, visual: categoryVisual(c) });
     }
     return list;
   }, [categories]);
@@ -290,7 +290,11 @@ function CatalogContent() {
                 className={activeCategory === cat.key ? 'is-active' : ''}
                 onClick={() => handleFilterClick(cat.key)}
               >
-                <i className={`ph ${cat.icon}`}></i>
+                {cat.visual.kind === 'image' ? (
+                  <img src={resolveImageUrl(cat.visual.src)} alt="" aria-hidden="true" style={{ width: '1.2em', height: '1.2em', objectFit: 'contain' }} />
+                ) : (
+                  <i className={cat.visual.className}></i>
+                )}
                 <span>{cat.label}</span>
               </button>
             ))}

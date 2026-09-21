@@ -1,4 +1,4 @@
-import type { CartItem, CatalogItem, CatalogVariant } from '@/types';
+import type { CartItem, CatalogCategory, CatalogItem, CatalogVariant } from '@/types';
 
 // ── Canonical hierarchy helpers (Category → Item → Variant → VariantImage) ──
 // All display values (price, stock, discount, images) come from the backend.
@@ -129,4 +129,118 @@ export const CATEGORY_ICONS: Record<string, string> = {
 export function categoryIcon(filter?: string | null): string {
   if (!filter) return CATEGORY_ICONS.all;
   return CATEGORY_ICONS[filter.toLowerCase()] || CATEGORY_ICONS.all;
+}
+
+/** True when an admin icon value is an uploaded image (not a `ph-*` code). */
+export function isImageIconValue(raw: string | null | undefined): boolean {
+  const v = (raw || '').trim();
+  return /^(https?:\/\/|\/|assets\/|data:image)/i.test(v);
+}
+
+export type CategoryVisual =
+  | { kind: 'icon'; className: string }
+  | { kind: 'image'; src: string };
+
+/** Preset icons offered by the Admin > Categories icon dropdown. */
+export const CATEGORY_ICON_OPTIONS: string[] = [
+  'ph-squares-four',
+  'ph-bowl-steam',
+  'ph-drop',
+  'ph-grains',
+  'ph-cube',
+  'ph-leaf',
+  'ph-fire',
+  'ph-gift',
+  'ph-package',
+  'ph-sparkle',
+  'ph-basket',
+  'ph-wheat',
+];
+
+/** Normalize an admin-chosen icon value to a full `ph ph-*` class string. */
+export function normalizeIconClass(raw: string | null | undefined, fallback = 'ph-squares-four'): string {
+  const clean = (raw || '').trim().replace(/^ph\s+/, '');
+  const name = clean.startsWith('ph-') ? clean : clean ? `ph-${clean}` : fallback;
+  return `ph ${name}`;
+}
+
+type IconCategory = Pick<CatalogCategory, 'icon' | 'filter'> | null | undefined;
+
+/** Category display icon: the admin-chosen icon wins, the filter map is the fallback. */
+export function categoryDisplayIcon(category: IconCategory, fallbackFilter?: string | null): string {
+  if ((category?.icon || '').trim()) return normalizeIconClass(category?.icon);
+  return `ph ${categoryIcon(fallbackFilter ?? category?.filter)}`;
+}
+
+export interface ExploreTabDef {
+  key: string;
+  label: string;
+  icon: string;
+  keywords: string[];
+}
+
+/**
+ * Explore-tab icon (`.nhp-tab-icon`): the admin category whose filter matches
+ * the tab supplies the icon (e.g. set the ghee category icon to change
+ * `ph-bowl-steam`, wellness for `ph-leaf`); otherwise the built-in icon.
+ */
+export function exploreTabIcon(
+  tab: ExploreTabDef,
+  categories: IconCategory[] | undefined
+): string {
+  const fallback = normalizeIconClass(tab.icon);
+  const list = categories ?? [];
+  const lower = tab.key.toLowerCase();
+  const exact = list.find(
+    (c) => (c?.filter || '').toLowerCase() === lower && (c?.icon || '').trim()
+  );
+  if (exact) return normalizeIconClass(exact?.icon);
+  const byKeyword = list.find(
+    (c) =>
+      (c?.icon || '').trim() &&
+      tab.keywords.some((kw) => (c?.filter || '').toLowerCase().includes(kw.toLowerCase()))
+  );
+  if (byKeyword) return normalizeIconClass(byKeyword?.icon);
+  return fallback;
+}
+
+/** Category visual: uploaded image wins when the icon value is image-like. */
+export function categoryVisual(
+  category: IconCategory,
+  fallbackFilter?: string | null
+): CategoryVisual {
+  const raw = (category?.icon || '').trim();
+  if (raw && isImageIconValue(raw)) return { kind: 'image', src: raw };
+  return { kind: 'icon', className: categoryDisplayIcon(category, fallbackFilter) };
+}
+
+function findTabCategory(
+  tab: ExploreTabDef,
+  categories: IconCategory[] | undefined
+): IconCategory {
+  const list = categories ?? [];
+  const lower = tab.key.toLowerCase();
+  const exact = list.find(
+    (c) => (c?.filter || '').toLowerCase() === lower && (c?.icon || '').trim()
+  );
+  if (exact) return exact;
+  return list.find(
+    (c) =>
+      (c?.icon || '').trim() &&
+      tab.keywords.some((kw) => (c?.filter || '').toLowerCase().includes(kw.toLowerCase()))
+  );
+}
+
+/** Explore-tab visual (`.nhp-tab-icon`): image when the category uses an upload. */
+export function exploreTabVisual(
+  tab: ExploreTabDef,
+  categories: IconCategory[] | undefined
+): CategoryVisual {
+  const match = findTabCategory(tab, categories);
+  if (match) {
+    const raw = (match?.icon || '').trim();
+    if (raw && isImageIconValue(raw)) return { kind: 'image', src: raw };
+    if (raw) return { kind: 'icon', className: normalizeIconClass(raw) };
+  }
+  return { kind: 'icon', className: normalizeIconClass(tab.icon) };
 }
