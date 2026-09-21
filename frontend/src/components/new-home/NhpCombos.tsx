@@ -1,89 +1,98 @@
 'use client';
 
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { api } from '@/lib/api';
+import type { CatalogItem, Combo } from '@/types';
+import { useCart } from '@/context/CartContext';
+import { money, resolveImageUrl } from '@/lib/utils';
+import {
+  firstValidVariant,
+  itemCardImage,
+  variantCartLine,
+  variantDiscountPercent,
+} from '@/lib/catalog';
 
-interface ComboData {
-  id: string;
-  category: string;
-  slug: string;
-  title: string;
-  details: string;
-  savePercent: number;
-  sellingPrice: number;
-  mrp: number;
-  tagline: string;
-  image: string;
-  alt: string;
+function comboDetailHref(combo: Combo): string {
+  const slug = combo.productOne?.slug || combo.product_one?.slug || '';
+  return slug ? `/products/${slug}` : '/products?category=combos';
 }
 
-const HARDCODED_COMBOS: ComboData[] = [
-  {
-    id: 'combo-everyday-sweetening',
-    category: 'EVERYDAY SWEETENING DUO',
-    slug: 'everyday-sweetening-duo',
-    title: 'Raw Forest Honey (350g) + Jaggery Powder (1 kg)',
-    details: 'A naturally sweet pantry pairing for tea, breakfast, desserts and everyday recipes.',
-    savePercent: 22,
-    sellingPrice: 490,
-    mrp: 598,
-    tagline: 'Best for Everyday Healthy Sweetness',
-    image: '/assets/images/temp-products/WhatsApp Image 2026-09-15 at 6.45.50 PM.jpeg',
-    alt: 'Everyday Sweetening Duo - Raw Forest Honey and Jaggery Powder',
-  },
-  {
-    id: 'combo-natural-honey',
-    category: 'NATURAL HONEY DUO',
-    slug: 'natural-honey-duo',
-    title: 'Raw Forest Honey (350g) + Raw Ajwain Honey (350g)',
-    details: 'Two distinctive raw honey varieties, bringing natural sweetness and variety to your everyday pantry.',
-    savePercent: 20,
-    sellingPrice: 638,
-    mrp: 798,
-    tagline: 'Bestselling Honey Duo',
-    image: '/assets/images/temp-products/WhatsApp Image 2026-09-15 at 6.45.50 PM3.jpeg',
-    alt: 'Natural Honey Duo - Raw Forest Honey and Raw Ajwain Honey',
-  },
-  {
-    id: 'combo-morning-essentials',
-    category: 'MORNING ESSENTIALS',
-    slug: 'morning-essentials',
-    title: 'Raw Forest Honey (350g) + Moringa Powder (300g)',
-    details: 'A simple morning pantry pairing combining raw honey with naturally sourced moringa powder.',
-    savePercent: 22,
-    sellingPrice: 612,
-    mrp: 748,
-    tagline: 'Healthy Day Starter',
-    image: '/assets/images/temp-products/WhatsApp Image 2026-09-15 at 6.45.50 PM23.jpeg',
-    alt: 'Morning Essentials - Raw Forest Honey and Moringa Powder',
-  },
-];
+export { comboDetailHref };
 
-function NhpComboCard({ combo }: { combo: ComboData }) {
+function NhpComboCard({ combo }: { combo: Combo }) {
+  const { addItem } = useCart();
+  const savePercent = Number(combo.savePercent ?? combo.save_percent ?? 0) || 0;
+  const sellingPrice = Number(combo.sellingPrice ?? combo.selling_price ?? 0) || 0;
+  const mrp = Number(combo.mrp ?? 0) || 0;
+  const href = comboDetailHref(combo);
+
+  const handleAdd = () => {
+    if (!(sellingPrice > 0)) return;
+    addItem(
+      {
+        id: `combo-${combo.slug}`,
+        name: combo.title,
+        price: sellingPrice,
+        original_price: mrp > sellingPrice ? mrp : sellingPrice,
+        image: combo.image || '',
+        type: 'combo',
+        bundle_ids: [combo.productOneRef || combo.product_one_ref, combo.productTwoRef || combo.product_two_ref].filter(
+          Boolean
+        ) as string[],
+      },
+      1,
+      true
+    );
+  };
+
   return (
     <article className="nhp-combo" data-category="combo">
-      <Link className="nhp-combo__media" href={`/products/${combo.slug}`} aria-label={combo.title}>
-        <span className="nhp-combo__save">SAVE {combo.savePercent}%</span>
-        <img src={combo.image} alt={combo.alt} loading="lazy" />
+      <Link className="nhp-combo__media" href={href} aria-label={combo.title}>
+        {savePercent > 0 && <span className="nhp-combo__save">SAVE {savePercent}%</span>}
+        {combo.image ? (
+          <img src={resolveImageUrl(combo.image)} alt={combo.alt || combo.title} loading="lazy" />
+        ) : (
+          <span className="nhp-combo__noimage" aria-hidden="true">
+            <i className="ph ph-image"></i>
+          </span>
+        )}
       </Link>
 
       <div className="nhp-combo__body">
         <p className="nhp-combo__category">{combo.category}</p>
         <h3 className="nhp-combo__title">
-          <Link href={`/products/${combo.slug}`}>{combo.title}</Link>
+          <Link href={href}>{combo.title}</Link>
         </h3>
-        <p className="nhp-combo__desc">{combo.details}</p>
-        
+        {combo.details || combo.description ? (
+          <p className="nhp-combo__desc">
+            <span className="nhp-combo__desc--desktop">
+              {(combo.details || combo.description || '').length > 434
+                ? (combo.details || combo.description || '').substring(0, 434) + '...'
+                : (combo.details || combo.description)}
+            </span>
+            <span className="nhp-combo__desc--mobile">
+              {(combo.details || combo.description || '').length > 205
+                ? (combo.details || combo.description || '').substring(0, 205) + '...'
+                : (combo.details || combo.description)}
+            </span>
+          </p>
+        ) : null}
+
         <div className="nhp-combo__footer">
           <div className="nhp-combo__meta">
             <div className="nhp-combo__price">
-              <strong>₹{combo.sellingPrice.toLocaleString()}</strong>
-              <s>₹{combo.mrp.toLocaleString()}</s>
+              <strong>{money(sellingPrice)}</strong>
+              {mrp > sellingPrice && <s>{money(mrp)}</s>}
             </div>
           </div>
           <button
             type="button"
             className="nhp-combo__add"
             data-add-to-cart
+            onClick={handleAdd}
+            disabled={!(sellingPrice > 0)}
+            aria-label={`Add ${combo.title} bundle to bag`}
           >
             <i className="ph ph-shopping-cart-simple" aria-hidden="true"></i> ADD
           </button>
@@ -93,7 +102,101 @@ function NhpComboCard({ combo }: { combo: ComboData }) {
   );
 }
 
-export function NhpCombos() {
+/** Legacy fallback card: a real catalog item sold as a bundle (Phase 8 behavior). */
+function NhpComboItemCard({ item }: { item: CatalogItem }) {
+  const { addItem } = useCart();
+  const selected = firstValidVariant(item);
+  if (!selected) return null;
+  const discount = variantDiscountPercent(selected);
+  const image = itemCardImage(item);
+  const title = `${item.name} ${selected.variantName}`.trim();
+
+  const handleAdd = () => {
+    addItem(variantCartLine(item, selected), 1, true);
+  };
+
+  return (
+    <article className="nhp-combo" data-category="combo">
+      <Link className="nhp-combo__media" href={`/products/${item.slug}`} aria-label={title}>
+        {discount > 0 && <span className="nhp-combo__save">SAVE {discount}%</span>}
+        {image ? (
+          <img src={resolveImageUrl(image)} alt={title} loading="lazy" />
+        ) : (
+          <span className="nhp-combo__noimage" aria-hidden="true">
+            <i className="ph ph-image"></i>
+          </span>
+        )}
+      </Link>
+
+      <div className="nhp-combo__body">
+        <p className="nhp-combo__category">{item.category || item.tag || 'Gawdee Combo'}</p>
+        <h3 className="nhp-combo__title">
+          <Link href={`/products/${item.slug}`}>{title}</Link>
+        </h3>
+        {item.description && (
+          <p className="nhp-combo__desc">
+            <span className="nhp-combo__desc--desktop">
+              {item.description.length > 434
+                ? item.description.substring(0, 434) + '...'
+                : item.description}
+            </span>
+            <span className="nhp-combo__desc--mobile">
+              {item.description.length > 205
+                ? item.description.substring(0, 205) + '...'
+                : item.description}
+            </span>
+          </p>
+        )}
+
+        <div className="nhp-combo__footer">
+          <div className="nhp-combo__meta">
+            <div className="nhp-combo__price">
+              <strong>{money(selected.sellingPrice)}</strong>
+              {selected.mrp > selected.sellingPrice && <s>{money(selected.mrp)}</s>}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="nhp-combo__add"
+            data-add-to-cart
+            onClick={handleAdd}
+            aria-label={`Add ${title} bundle to bag`}
+          >
+            <i className="ph ph-shopping-cart-simple" aria-hidden="true"></i> ADD
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function isComboLike(item: CatalogItem): boolean {
+  const haystack = `${item.categoryKey || ''} ${item.category || ''} ${item.tag || ''} ${item.name || ''}`.toLowerCase();
+  return haystack.includes('combo') || haystack.includes('duo') || haystack.includes('bundle') || haystack.includes('essentials');
+}
+
+export function NhpCombos({ items = [] }: { items?: CatalogItem[] }) {
+  const [combos, setCombos] = useState<Combo[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getCombos()
+      .then((res) => {
+        if (!cancelled) setCombos(res.combos || []);
+      })
+      .catch(() => {
+        if (!cancelled) setCombos([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const fallback = useMemo(() => items.filter(isComboLike).slice(0, 3), [items]);
+  const loading = combos === null;
+  const showCombos = (combos?.length ?? 0) > 0;
+
   return (
     <section className="nhp-combos" id="combos" aria-label="Curated Gawdee combos">
       <div className="nhp-combos__inner">
@@ -108,11 +211,35 @@ export function NhpCombos() {
           </Link>
         </div>
 
-        <div className="nhp-combos__grid">
-          {HARDCODED_COMBOS.map((combo) => (
-            <NhpComboCard key={combo.id} combo={combo} />
-          ))}
-        </div>
+        {loading ? (
+          <div className="nhp-combos__grid" aria-busy="true" aria-label="Loading combos">
+            {[0, 1, 2].map((i) => (
+              <article className="nhp-combo" key={i} aria-hidden="true">
+                <div className="nhp-combo__media" style={{ background: '#f1efe7' }} />
+                <div className="nhp-combo__body">
+                  <p className="nhp-combo__category">Loading…</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : showCombos ? (
+          <div className="nhp-combos__grid">
+            {combos!.map((combo) => (
+              <NhpComboCard key={combo.id} combo={combo} />
+            ))}
+          </div>
+        ) : fallback.length > 0 ? (
+          <div className="nhp-combos__grid">
+            {fallback.map((item) => (
+              <NhpComboItemCard key={item.id} item={item} />
+            ))}
+          </div>
+        ) : (
+          <div className="nhp-combos__empty">
+            <i className="ph ph-gift" aria-hidden="true"></i>
+            <p>Fresh combo packs are being curated — check back soon.</p>
+          </div>
+        )}
       </div>
     </section>
   );

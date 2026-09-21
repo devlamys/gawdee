@@ -236,44 +236,9 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* 5. Campaign Special Offer Banner (real offer configured in backend settings) */}
-      {offerCode && (
-        <section className="commerce-section campaign-offer-section" id="offers">
-          <div className="container">
-            <div className="commerce-section__heading reveal">
-              <div>
-                <span className="eyebrow">
-                  <i className="ph ph-tag"></i> Special offer
-                </span>
-                <h2>Flat {offerPercent ? `${offerPercent}% OFF` : 'special savings'}</h2>
-                <p>On all products. Use code {offerCode} at checkout.</p>
-              </div>
-              <div className="commerce-section__actions">
-                <Link className="button button--primary" href="#shop">
-                  Shop offer <i className="ph ph-arrow-right"></i>
-                </Link>
-              </div>
-            </div>
-            <Link
-              className="independence-image-offer reveal reveal--scale"
-              href="#shop"
-              aria-label={`Flat ${offerPercent ? `${offerPercent}% OFF` : 'special savings'}. On all products. Use code ${offerCode} at checkout.`}
-            >
-              <picture>
-                <source
-                  media="(max-width: 700px)"
-                  srcSet="/assets/images/independence-day-offer-banner-mobile-v1.png"
-                />
-                <img
-                  src="/assets/images/independence-day-offer-banner-v1.png"
-                  alt={`Flat ${offerPercent ? `${offerPercent}% OFF` : 'special savings'}. On all products. Use code ${offerCode} at checkout.`}
-                  loading="lazy"
-                />
-              </picture>
-            </Link>
-          </div>
-        </section>
-      )}
+
+
+
 
 
 

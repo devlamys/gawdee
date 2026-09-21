@@ -63,6 +63,35 @@ export function itemHoverImage(item: Pick<CatalogItem, 'hoverImageUrl' | 'hoverI
 }
 
 /**
+ * Listing card imagery for one variant: first image shows by default,
+ * second image shows on hover. Precedence is backend-driven —
+ * gallery preview (admin order), then the variant's own image, then the
+ * item image; the item hover image is the last-resort second frame.
+ * Returns `[first, second]` where second may be '' (no hover swap).
+ */
+export function variantCardImages(
+  item: Pick<CatalogItem, 'imageUrl' | 'image' | 'hoverImageUrl' | 'hoverImage'> | null | undefined,
+  variant: CatalogVariant | null | undefined
+): [string, string] {
+  const gallery = (
+    variant?.imagePreview ??
+    (variant?.images ?? []).map((g) => g?.imageUrl)
+  ).filter((u): u is string => typeof u === 'string' && u.trim() !== '');
+  const ordered = gallery.map((u) => u.trim()).filter((u, i, a) => a.indexOf(u) === i);
+  const own = (variant?.image || '').trim();
+  if (own && !ordered.includes(own)) ordered.push(own);
+  const itemImg = itemCardImage(item as Pick<CatalogItem, 'imageUrl' | 'image'> | null | undefined);
+  if (itemImg && !ordered.includes(itemImg)) ordered.push(itemImg);
+  const first = ordered[0] || '';
+  let second = ordered[1] || '';
+  if (!second) {
+    const hover = itemHoverImage(item);
+    if (hover && hover !== first) second = hover;
+  }
+  return [first, second];
+}
+
+/**
  * Build a cart line that identifies the exact variant (ItemId + VariantId).
  * `id` stays the backend-resolvable variant id so checkout keeps working;
  * itemId/variantId make the distinction explicit for multi-variant items.

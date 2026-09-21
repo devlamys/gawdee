@@ -360,11 +360,16 @@ img {
     display: flex;
     flex-direction: column;
     padding: 24px 18px;
+    overflow: hidden;
     color: #dcebe3;
     background: radial-gradient(circle at 0 0, rgba(223, 151, 72, .19), transparent 28%), linear-gradient(180deg, #062f22, #05271d)
 }
 
 .admin-logo {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    flex-shrink: 0;
     width: 132px;
     margin: 2px 9px 30px;
     padding: 8px 11px;
@@ -374,7 +379,27 @@ img {
 
 .admin-nav {
     display: grid;
-    gap: 5px
+    gap: 5px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-bottom: 12px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, .25) transparent
+}
+
+.admin-nav::-webkit-scrollbar {
+    width: 6px
+}
+
+.admin-nav::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .22)
+}
+
+.admin-nav::-webkit-scrollbar-track {
+    background: transparent
 }
 
 .admin-nav a {
@@ -408,6 +433,7 @@ img {
 }
 
 .admin-sidebar__footer {
+    flex-shrink: 0;
     margin-top: auto;
     padding: 14px;
     border: 1px solid rgba(255, 255, 255, .09);
@@ -444,6 +470,9 @@ img {
 }
 
 .admin-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
     height: 78px;
     display: flex;
     align-items: center;

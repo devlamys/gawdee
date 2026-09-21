@@ -26,6 +26,7 @@ import aiosqlite
 from ..database import (
     get_db, migrate, get_setting,
     get_order_by_id, get_order_items, get_order_events,
+    get_combos, get_combo_by_slug,
 )
 from ..commerce import checkout_pricing
 from ..core.config import settings
@@ -525,6 +526,25 @@ async def offers(db: aiosqlite.Connection = Depends(db_dep)):
     ) as cur:
         rows = await cur.fetchall()
     return {"ok": True, "offers": [dict(r) for r in rows]}
+
+
+# ── GET /api/combos ─────────────────────────────────────────────────────────
+# Active curated bundles for the `nhp-combos__grid` storefront section.
+# Pricing/discount are backend-computed; the frontend renders them as-is.
+
+@router.get("/combos")
+async def combos(db: aiosqlite.Connection = Depends(db_dep)):
+    return {"ok": True, "combos": await get_combos(db)}
+
+
+# ── GET /api/combos/{slug} ──────────────────────────────────────────────────
+
+@router.get("/combos/{slug}")
+async def combo_detail(slug: str, db: aiosqlite.Connection = Depends(db_dep)):
+    combo = await get_combo_by_slug(db, slug)
+    if not combo:
+        raise HTTPException(status_code=404, detail="Combo not found.")
+    return {"ok": True, "combo": combo}
 
 
 # ── GET /api/video-testimonials ───────────────────────────────────────────────

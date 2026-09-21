@@ -8,6 +8,7 @@ import {
   VideoTestimonial,
   HomepageMedia,
   Offer,
+  Combo,
   StorefrontResponse,
   CatalogCategory,
   CatalogItem,
@@ -206,6 +207,9 @@ export const api = {
   getTestimonials: () => fetcher<{ ok: boolean; testimonials: Testimonial[] }>('/testimonials', { next: { revalidate: 120 } }),
   getVideoTestimonials: () => fetcher<{ ok: boolean; video_testimonials: VideoTestimonial[] }>('/video-testimonials', { next: { revalidate: 120 } }),
   getOffers: () => fetcher<{ ok: boolean; offers: Offer[] }>('/offers', { cache: 'no-store' }),
+  // Curated combos for the `nhp-combos__grid` section (Admin > Combos)
+  getCombos: () => fetcher<{ ok: boolean; combos: Combo[] }>('/combos', { next: { revalidate: 60 } }),
+  getCombo: (slug: string) => fetcher<{ ok: boolean; combo: Combo }>(`/combos/${slug}`),
   getHomepageMedia: (section = 'reels') => fetcher<{ ok: boolean; media: HomepageMedia[] }>(`/homepage-media?section=${section}`, { cache: 'no-store' }),
   getBlog: (limit = 10) => fetcher<{ ok: boolean; posts: BlogPost[] }>(`/blog?limit=${limit}`, { next: { revalidate: 120 } }),
   getBlogPost: (slug: string) => fetcher<{ ok: boolean; post: BlogPost }>(`/blog/${slug}`),
