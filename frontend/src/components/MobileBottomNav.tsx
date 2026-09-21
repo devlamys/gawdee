@@ -8,8 +8,7 @@ import { useCart } from '@/context/CartContext';
 /**
  * Mobile sticky bottom navigation — Home · Categories · Coin Wallet · Cart.
  * Rendered only on small viewports (see .mobile-bottom-nav CSS).
- * Hidden on admin and checkout routes. The Coin Wallet tab lands on the
- * account dashboard until the gamification layer ships its wallet screen.
+ * Hidden on admin and checkout routes.
  */
 export const MobileBottomNav: React.FC = () => {
   const pathname = usePathname();
@@ -21,7 +20,7 @@ export const MobileBottomNav: React.FC = () => {
 
   const isHome = pathname === '/';
   const isCategories = pathname.startsWith('/products');
-  const isWallet = pathname.startsWith('/wallet');
+  const isWallet = pathname === '/wallet' || pathname === '/account/loyalty';
 
   return (
     <nav className="mobile-bottom-nav" aria-label="Primary">
@@ -55,11 +54,10 @@ export const MobileBottomNav: React.FC = () => {
         href="/wallet"
         className={`mobile-bottom-nav__tab ${isWallet ? 'is-active' : ''}`}
         aria-current={isWallet ? 'page' : undefined}
-        aria-label="Coin wallet (coming soon)"
+        aria-label="Coin wallet"
       >
         <i className={`ph ${isWallet ? 'ph-fill ph-coins' : 'ph-coins'}`} aria-hidden="true"></i>
         <span>Wallet</span>
-        <span className="mobile-bottom-nav__soon">Soon</span>
       </Link>
 
       <button

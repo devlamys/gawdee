@@ -28,7 +28,9 @@ from ..database import (
     get_order_by_id, get_order_items, get_order_events,
     get_combos, get_combo_by_slug,
 )
+from ..commerce import checkout_pricing
 from ..core.config import settings
+from ..loyalty import redemption_quote
 from ..session import get_session, set_session_value, clear_session
 
 router = APIRouter()
@@ -65,7 +67,7 @@ async def get_current_customer(request: Request, db: aiosqlite.Connection = Depe
     if not cid:
         raise HTTPException(status_code=401, detail="Authentication required.")
     async with db.execute(
-        "SELECT id, name, email, role, phone, address1, address2, city, state, pincode, whatsapp_marketing_opt_in, created_at, last_login_at FROM users WHERE id=? AND role='customer'",
+        "SELECT id, name, email, role, phone, address1, address2, city, state, pincode, whatsapp_marketing_opt_in, sms_marketing_opt_in, email_marketing_opt_in, whatsapp_followup_opt_in, unsubscribe_url, whatsapp_marketing_opt_in_at, sms_marketing_opt_in_at, email_marketing_opt_in_at, whatsapp_followup_opt_in_at, created_at, last_login_at FROM users WHERE id=? AND role='customer'",
         (int(cid),),
     ) as cur:
         row = await cur.fetchone()
@@ -83,6 +85,10 @@ class RegisterRequest(BaseModel):
     password: str
     password_confirmation: str
     whatsapp_marketing_opt_in: bool = False
+    sms_marketing_opt_in: bool = False
+    email_marketing_opt_in: bool = False
+    whatsapp_followup_opt_in: bool = False
+    unsubscribe_url: Optional[str] = ""
 
 @router.post("/auth/register")
 async def register(payload: RegisterRequest, request: Request, db: aiosqlite.Connection = Depends(db_dep)):
@@ -100,11 +106,31 @@ async def register(payload: RegisterRequest, request: Request, db: aiosqlite.Con
     if password != payload.password_confirmation:
         raise HTTPException(status_code=422, detail={"message": "The password confirmation does not match."})
 
-    marketing_opt_in = 1 if payload.whatsapp_marketing_opt_in else 0
+    whatsapp_opt_in = 1 if payload.whatsapp_marketing_opt_in else 0
+    sms_opt_in = 1 if payload.sms_marketing_opt_in else 0
+    email_opt_in = 1 if payload.email_marketing_opt_in else 0
+    followup_opt_in = 1 if payload.whatsapp_followup_opt_in else 0
+    unsubscribe_url = (payload.unsubscribe_url or "").strip()[:500]
     try:
         await db.execute(
-            "INSERT INTO users (name, email, password_hash, role, phone, whatsapp_marketing_opt_in, whatsapp_marketing_opt_in_at) VALUES (?, ?, ?, 'customer', ?, ?, CASE WHEN ?=1 THEN CURRENT_TIMESTAMP ELSE NULL END)",
-            (name, email, _hash_password(password), phone, marketing_opt_in, marketing_opt_in),
+            """
+            INSERT INTO users (
+                name, email, password_hash, role, phone,
+                whatsapp_marketing_opt_in, whatsapp_marketing_opt_in_at,
+                sms_marketing_opt_in, sms_marketing_opt_in_at,
+                email_marketing_opt_in, email_marketing_opt_in_at,
+                whatsapp_followup_opt_in, whatsapp_followup_opt_in_at,
+                unsubscribe_url
+            ) VALUES (?, ?, ?, 'customer', ?, ?, CASE WHEN ?=1 THEN CURRENT_TIMESTAMP ELSE NULL END, ?, CASE WHEN ?=1 THEN CURRENT_TIMESTAMP ELSE NULL END, ?, CASE WHEN ?=1 THEN CURRENT_TIMESTAMP ELSE NULL END, ?, CASE WHEN ?=1 THEN CURRENT_TIMESTAMP ELSE NULL END, ?)
+            """,
+            (
+                name, email, _hash_password(password), phone,
+                whatsapp_opt_in, whatsapp_opt_in,
+                sms_opt_in, sms_opt_in,
+                email_opt_in, email_opt_in,
+                followup_opt_in, followup_opt_in,
+                unsubscribe_url,
+            ),
         )
         async with db.execute("SELECT last_insert_rowid()") as cur:
             user_id = (await cur.fetchone())[0]
@@ -215,6 +241,10 @@ class ProfileRequest(BaseModel):
     state: Optional[str] = ""
     pincode: Optional[str] = ""
     whatsapp_marketing_opt_in: bool = False
+    sms_marketing_opt_in: bool = False
+    email_marketing_opt_in: bool = False
+    whatsapp_followup_opt_in: bool = False
+    unsubscribe_url: Optional[str] = ""
 
 @router.patch("/account/profile")
 async def update_profile(payload: ProfileRequest, customer=Depends(get_current_customer), db: aiosqlite.Connection = Depends(db_dep)):
@@ -229,10 +259,36 @@ async def update_profile(payload: ProfileRequest, customer=Depends(get_current_c
     if pincode and not re.match(r"^[1-9][0-9]{5}$", pincode):
         raise HTTPException(status_code=422, detail={"message": "Enter a valid six-digit pincode."})
 
-    opt_in = 1 if payload.whatsapp_marketing_opt_in else 0
+    whatsapp_opt_in = 1 if payload.whatsapp_marketing_opt_in else 0
+    sms_opt_in = 1 if payload.sms_marketing_opt_in else 0
+    email_opt_in = 1 if payload.email_marketing_opt_in else 0
+    followup_opt_in = 1 if payload.whatsapp_followup_opt_in else 0
+    unsubscribe_url = (payload.unsubscribe_url or "").strip()[:500]
     await db.execute(
-        "UPDATE users SET name=?, phone=?, address1=?, address2=?, city=?, state=?, pincode=?, whatsapp_marketing_opt_in=?, whatsapp_marketing_opt_in_at=CASE WHEN ?=1 AND whatsapp_marketing_opt_in=0 THEN CURRENT_TIMESTAMP ELSE whatsapp_marketing_opt_in_at END, whatsapp_opt_out_at=CASE WHEN ?=1 THEN NULL ELSE CURRENT_TIMESTAMP END, updated_at=CURRENT_TIMESTAMP WHERE id=? AND role='customer'",
-        (name, phone, (payload.address1 or "").strip(), (payload.address2 or "").strip(), (payload.city or "").strip(), (payload.state or "").strip(), pincode, opt_in, opt_in, opt_in, int(customer["id"])),
+        """
+        UPDATE users SET
+            name=?, phone=?, address1=?, address2=?, city=?, state=?, pincode=?,
+            whatsapp_marketing_opt_in=?, whatsapp_marketing_opt_in_at=CASE WHEN ?=1 AND whatsapp_marketing_opt_in=0 THEN CURRENT_TIMESTAMP ELSE whatsapp_marketing_opt_in_at END,
+            sms_marketing_opt_in=?, sms_marketing_opt_in_at=CASE WHEN ?=1 AND sms_marketing_opt_in=0 THEN CURRENT_TIMESTAMP ELSE sms_marketing_opt_in_at END,
+            email_marketing_opt_in=?, email_marketing_opt_in_at=CASE WHEN ?=1 AND email_marketing_opt_in=0 THEN CURRENT_TIMESTAMP ELSE email_marketing_opt_in_at END,
+            whatsapp_followup_opt_in=?, whatsapp_followup_opt_in_at=CASE WHEN ?=1 AND whatsapp_followup_opt_in=0 THEN CURRENT_TIMESTAMP ELSE whatsapp_followup_opt_in_at END,
+            whatsapp_opt_out_at=CASE WHEN ?=1 THEN NULL ELSE whatsapp_opt_out_at END,
+            sms_opt_out_at=CASE WHEN ?=1 THEN NULL ELSE sms_opt_out_at END,
+            email_opt_out_at=CASE WHEN ?=1 THEN NULL ELSE email_opt_out_at END,
+            unsubscribe_url=?,
+            updated_at=CURRENT_TIMESTAMP
+        WHERE id=? AND role='customer'
+        """,
+        (
+            name, phone, (payload.address1 or "").strip(), (payload.address2 or "").strip(), (payload.city or "").strip(), (payload.state or "").strip(), pincode,
+            whatsapp_opt_in, whatsapp_opt_in,
+            sms_opt_in, sms_opt_in,
+            email_opt_in, email_opt_in,
+            followup_opt_in, followup_opt_in,
+            whatsapp_opt_in, sms_opt_in, email_opt_in,
+            unsubscribe_url,
+            int(customer["id"]),
+        ),
     )
     await db.commit()
     return {"ok": True, "message": "Your profile and delivery details were updated."}
@@ -286,6 +342,95 @@ async def customer_order_detail(order_number: str, customer=Depends(get_current_
     order["items"] = items
     order["events"] = events
     return {"ok": True, "order": order}
+
+
+# ── Loyalty API for customer wallet and redemption quotes ────────────────────
+
+class LoyaltyQuoteLine(BaseModel):
+    id: str
+    quantity: int = 1
+
+
+class LoyaltyQuoteRequest(BaseModel):
+    items: list[LoyaltyQuoteLine]
+    coupon_code: str = ""
+    requested_coins: int = 0
+
+
+@router.get("/loyalty/wallet")
+async def loyalty_wallet(customer=Depends(get_current_customer), db: aiosqlite.Connection = Depends(db_dep)):
+    async with db.execute(
+        "SELECT * FROM loyalty_wallets WHERE customer_id=?",
+        (int(customer["id"]),),
+    ) as cur:
+        wallet = await cur.fetchone()
+    if wallet is None:
+        await db.execute("INSERT OR IGNORE INTO loyalty_wallets(customer_id) VALUES (?)", (int(customer["id"]),))
+        await db.commit()
+        async with db.execute(
+            "SELECT * FROM loyalty_wallets WHERE customer_id=?",
+            (int(customer["id"]),),
+        ) as cur:
+            wallet = await cur.fetchone()
+    wallet = dict(wallet)
+    async with db.execute(
+        "SELECT COALESCE(SUM(available_coins),0) AS expiring_soon FROM loyalty_lots WHERE customer_id=? AND expires_at IS NOT NULL AND expires_at <= datetime('now', '+30 days')",
+        (int(customer["id"]),),
+    ) as cur:
+        expiring_row = await cur.fetchone()
+    expiring_soon = int(expiring_row["expiring_soon"] if expiring_row is not None and "expiring_soon" in expiring_row.keys() else 0)
+    response = {
+        "available_coins": int(wallet["available_coins"]),
+        "pending_coins": int(wallet["pending_coins"]),
+        "reserved_coins": int(wallet["reserved_coins"]),
+        "lifetime_earned": int(wallet["lifetime_earned"]),
+        "lifetime_redeemed": int(wallet["lifetime_redeemed"]),
+        "lifetime_expired": int(wallet["lifetime_expired"]),
+        "lifetime_reversed": int(wallet["lifetime_reversed"]),
+        "equivalent_paise": int(wallet["available_coins"]),
+        "expiring_soon_coins": expiring_soon,
+    }
+    return {"ok": True, "wallet": response}
+
+
+@router.get("/loyalty/transactions")
+async def loyalty_transactions(customer=Depends(get_current_customer), db: aiosqlite.Connection = Depends(db_dep)):
+    async with db.execute(
+        """
+        SELECT lt.*, o.order_number
+        FROM loyalty_transactions lt
+        LEFT JOIN orders o ON o.id = lt.order_id
+        WHERE lt.customer_id = ?
+        ORDER BY lt.id DESC
+        LIMIT 200
+        """,
+        (int(customer["id"]),),
+    ) as cur:
+        rows = await cur.fetchall()
+    return {"ok": True, "transactions": [dict(row) for row in rows]}
+
+
+@router.post("/loyalty/calculate-redemption")
+async def calculate_redemption(payload: LoyaltyQuoteRequest, customer=Depends(get_current_customer), db: aiosqlite.Connection = Depends(db_dep)):
+    if not payload.items:
+        raise HTTPException(status_code=422, detail={"message": "Choose at least one product to calculate loyalty redemption."})
+    pricing = await checkout_pricing(db, [{"id": item.id, "quantity": item.quantity} for item in payload.items], payload.coupon_code or "")
+    quote = await redemption_quote(
+        db,
+        int(customer["id"]),
+        pricing,
+        requested_coins=int(payload.requested_coins or 0),
+    )
+    response = {
+        "ok": True,
+        "eligible_paise": int(quote["eligible_paise"]),
+        "available_coins": int(quote["available_coins"]),
+        "max_redeemable_coins": int(quote["max_redeemable_coins"]),
+        "requested_coins": int(quote["requested_coins"]),
+        "discount_paise": int(quote["discount_paise"]),
+        "lines": quote.get("lines", []),
+    }
+    return response
 
 
 # ── GET /api/storefront ───────────────────────────────────────────────────────

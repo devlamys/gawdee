@@ -15,6 +15,9 @@ import {
   CatalogVariant,
   CatalogVariantImage,
   HeroSlideRow,
+  LoyaltyWallet,
+  LoyaltyTransaction,
+  LoyaltyRedemptionQuote,
 } from '@/types';
 import { env } from '@/config/env';
 
@@ -73,6 +76,13 @@ export interface CreateOrderResponse {
   discount: number;
   shipping: number;
   total: number;
+  subtotal_paise?: number;
+  shipping_paise?: number;
+  discount_paise?: number;
+  loyalty_discount_paise?: number;
+  total_paise?: number;
+  loyalty_coins_earned?: number;
+  loyalty_coins_redeemed?: number;
   coupon_code?: string;
   already_paid?: boolean;
   account_url?: string;
@@ -140,7 +150,20 @@ export const api = {
       body: JSON.stringify({ ids, saved }),
     }),
 
-  // Orders & Payment — backend expects { customer, items: [{ id, quantity }], payment_method, checkout_token, coupon_code }
+  loyalty: {
+    getWallet: () => fetcher<{ ok: boolean; wallet: LoyaltyWallet }>('/loyalty/wallet', { cache: 'no-store' }),
+    getTransactions: () => fetcher<{ ok: boolean; transactions: LoyaltyTransaction[] }>('/loyalty/transactions', { cache: 'no-store' }),
+    calculateRedemption: (payload: {
+      items: { id: string; quantity: number }[];
+      coupon_code?: string;
+      requested_coins: number;
+    }) => fetcher<LoyaltyRedemptionQuote>('/loyalty/calculate-redemption', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  },
+
+  // Orders & Payment — backend expects { customer, items: [{ id, quantity }], payment_method, checkout_token, coupon_code, loyalty_coins }
   createOrder: (payload: {
     customer: {
       name: string;
@@ -154,6 +177,7 @@ export const api = {
       notes?: string;
     };
     coupon_code?: string;
+    loyalty_coins?: number;
     payment_method: 'razorpay' | 'cod';
     checkout_token: string;
     items: { id: string; quantity: number }[];

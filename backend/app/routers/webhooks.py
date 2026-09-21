@@ -9,13 +9,15 @@ import json
 import secrets
 from fastapi import APIRouter, Request, Response, HTTPException
 
-from ..database import get_db, migrate, get_setting, record_webhook_event, complete_webhook_event, log_integration
+from ..database import get_db, migrate, get_setting, record_webhook_event, complete_webhook_event, log_integration, record_order_event
 from ..integrations import (
     razorpay_verify_webhook, razorpay_payment_matches_order,
     whatsapp_verify_webhook, normalize_phone,
     process_notification_queue, delhivery_map_order_status,
+    auto_reply_product_question, build_whatsapp_support_event,
+    forward_whatsapp_support_event,
 )
-from ..commerce import mark_order_paid, mark_payment_failed, update_order_status, order_allowed_transitions
+from ..commerce import mark_order_paid, update_order_status, order_allowed_transitions
 from ..core.config import settings
 
 router = APIRouter(prefix="/webhooks")
@@ -62,18 +64,22 @@ async def razorpay_webhook(request: Request):
                     order = await cur.fetchone()
                 if order:
                     order = dict(order)
-                    remote_amount = int(payment.get("amount") or event.get("payload", {}).get("order", {}).get("entity", {}).get("amount_paid", -1))
-                    remote_currency = str(payment.get("currency") or event.get("payload", {}).get("order", {}).get("entity", {}).get("currency", settings.CURRENCY)).upper()
-                    if remote_amount != int(order["total"]) * 100 or remote_currency != settings.CURRENCY:
-                        raise RuntimeError("Signed webhook amount or currency did not match the local order.")
+                    if not payment_id or not razorpay_payment_matches_order(payment, order):
+                        raise RuntimeError("Signed webhook payment was not captured for this exact order and amount.")
                     await mark_order_paid(db, int(order["id"]), payment_id)
 
             if rp_order_id and event_name == "payment.failed":
-                async with db.execute("SELECT id FROM orders WHERE razorpay_order_id=?", (rp_order_id,)) as cur:
+                async with db.execute("SELECT id, payment_status FROM orders WHERE razorpay_order_id=?", (rp_order_id,)) as cur:
                     row = await cur.fetchone()
-                if row:
+                if row and row["payment_status"] == "pending":
                     reason = str(payment.get("error_description") or payment.get("error_reason") or "Razorpay reported that payment was not completed.")
-                    await mark_payment_failed(db, int(row["id"]), reason)
+                    await db.execute(
+                        "UPDATE orders SET payment_error=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND payment_status='pending'",
+                        (reason[:500], int(row["id"])),
+                    )
+                    await record_order_event(db, int(row["id"]), "pending", "Payment attempt failed",
+                        "The customer can retry payment while the order remains pending.")
+                    await db.commit()
 
             await process_notification_queue(db, settings.NOTIFICATION_BATCH_WEBHOOK)
             await complete_webhook_event(db, "razorpay", event_key)
@@ -221,17 +227,39 @@ async def whatsapp_webhook_receive(request: Request):
                             (state, error_message, message_id),
                         )
 
-                    # ── Marketing opt-out
+                    # ── Marketing opt-out and product support
                     for message in value.get("messages", []):
-                        text = str(message.get("text", {}).get("body") or message.get("button", {}).get("text", "")).lower().strip()
-                        if text not in ("stop", "unsubscribe", "cancel", "opt out"):
-                            continue
-                        phone = normalize_phone(str(message.get("from", "")))
-                        if phone:
+                        from_number = str(message.get("from", "")).strip()
+                        phone = normalize_phone(from_number)
+                        text = str((message.get("text") or {}).get("body") or (message.get("button") or {}).get("text") or "").strip()
+                        lowered = text.lower().strip()
+
+                        if lowered in ("stop", "unsubscribe", "cancel", "opt out") and phone:
                             await db.execute(
                                 "UPDATE users SET whatsapp_marketing_opt_in=0, whatsapp_opt_out_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE role='customer' AND phone LIKE ?",
                                 (f"%{phone[-10:]}%",),
                             )
+                            continue
+
+                        if phone and text:
+                            support_event = build_whatsapp_support_event(message)
+                            if not support_event:
+                                continue
+                            message_key = support_event["message_id"]
+                            if not await record_webhook_event(db, "whatsapp_message", message_key, "inbound", json.dumps(message)):
+                                continue
+                            try:
+                                forwarded = await forward_whatsapp_support_event(db, support_event)
+                                if not forwarded:
+                                    await auto_reply_product_question(db, phone, text)
+                                await complete_webhook_event(db, "whatsapp_message", message_key)
+                            except Exception:
+                                await db.execute(
+                                    "DELETE FROM webhook_events WHERE provider=? AND event_key=?",
+                                    ("whatsapp_message", message_key),
+                                )
+                                await db.commit()
+                                raise
 
             await db.commit()
             await complete_webhook_event(db, "whatsapp", event_key)

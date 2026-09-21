@@ -1,0 +1,87 @@
+{
+  "name": "Gawdee | Opted-in WhatsApp offers",
+  "nodes": [
+    {
+      "id": "fff70e41-86bb-5e36-9ab6-c7dea637460e",
+      "name": "marketing-wa event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gawdee/marketing-wa",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "a8b936cf-4311-5447-9237-373fc0d7fac9"
+    },
+    {
+      "id": "2416a0e4-dcd0-5de7-99eb-1d8c6e86f8d9",
+      "name": "Prepare marketing-wa messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const event = $input.first().json.body;\nif (!event || event.type !== 'campaign.offer' || !event.event_id) throw new Error('Expected campaign.offer with event_id');\nconst recipient = event.recipient || {};\nconst phone = String(recipient.phone || '').replace(/\\D/g, '');\nif (!/^\\d{8,15}$/.test(phone)) throw new Error('Phone must include country code');\nif (recipient.whatsapp_marketing_opt_in !== true || recipient.whatsapp_opted_out === true) return [];\nconst offer = event.offer || {};\nconst title = String(offer.title || '').trim().slice(0, 140);\nconst description = String(offer.description || '').trim().slice(0, 500);\nconst url = String(offer.url || '');\nif (!title || !description || !/^https:\\/\\/[^\\s]+$/i.test(url)) throw new Error('Offer title, description and HTTPS URL are required');\nconst image = String(offer.image_url || '');\nconst hasImage = /^https:\\/\\/[^\\s]+$/i.test(image);\nconst components = [];\nif (hasImage) components.push({type: 'header', parameters: [{type: 'image', image: {link: image}}]});\ncomponents.push({type: 'body', parameters: [title, description, url].map(text => ({type: 'text', text}))});\nreturn [{json: {event_id: event.event_id, payload: {\n  messaging_product: 'whatsapp', to: phone, type: 'template', template: {\n    name: hasImage ? 'gawdee_offer_image' : 'gawdee_offer_text',\n    language: {code: 'en_US'}, components,\n  },\n}}}];\n"
+      }
+    },
+    {
+      "id": "065dc4e4-d5e3-5ddc-8296-a7dd918e37f1",
+      "name": "Send marketing-wa WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v23.0/REPLACE_PHONE_NUMBER_ID/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "marketing-wa event": {
+      "main": [
+        [
+          {
+            "node": "Prepare marketing-wa messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare marketing-wa messages": {
+      "main": [
+        [
+          {
+            "node": "Send marketing-wa WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "tags": []
+}

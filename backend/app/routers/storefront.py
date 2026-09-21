@@ -30,7 +30,7 @@ from ..integrations import (
     whatsapp_configured, whatsapp_request_otp, whatsapp_verify_otp,
     ai_configured, ai_generate,
     queue_order_notification, process_notification_queue,
-    log_integration,
+    log_integration, trigger_order_event, trigger_checkout_abandoned_event,
 )
 from ..session import get_session, set_session_value, get_session_value
 from ..core.config import settings
@@ -308,6 +308,8 @@ class CreateOrderRequest(BaseModel):
     payment_method: str = "razorpay"
     checkout_token: str
     coupon_code: Optional[str] = ""
+    loyalty_coins: int = 0
+    whatsapp_followup_opt_in: bool = False
 
 @router.post("/create-order")
 async def create_order(payload: CreateOrderRequest, request: Request, db: aiosqlite.Connection = Depends(db_dep)):
@@ -346,6 +348,7 @@ async def create_order(payload: CreateOrderRequest, request: Request, db: aiosql
             db, fields, requested_items, payment_method,
             int(customer_id) if customer_id else None,
             payload.checkout_token.strip(), (payload.coupon_code or "").strip(),
+            int(payload.loyalty_coins or 0),
         )
 
         if order["payment_method"] != payment_method:
@@ -398,6 +401,14 @@ async def create_order(payload: CreateOrderRequest, request: Request, db: aiosql
             }
 
         await log_integration(db, "checkout", "order_received", "success", "Order saved in the fulfilment queue.", str(order["order_number"]))
+        if payment_method == "cod" or order.get("payment_status") == "paid":
+            try:
+                async with db.execute("SELECT product_name, quantity, image FROM order_items WHERE order_id = ? ORDER BY id", (int(order["id"]),)) as cur:
+                    rows = await cur.fetchall()
+                item_payload = [{"product_name": r["product_name"], "quantity": int(r["quantity"]), "image_url": str(r["image"] or "").strip()} for r in rows]
+                await trigger_order_event(db, dict(order), item_payload)
+            except Exception:
+                pass
         await process_notification_queue(db, settings.NOTIFICATION_BATCH_CHECKOUT)
         return response
     except (ValueError, RuntimeError) as exc:
@@ -435,6 +446,10 @@ async def verify_payment(payload: VerifyPaymentRequest, request: Request, db: ai
 
         from ..commerce import mark_order_paid
         await mark_order_paid(db, int(order["id"]), payload.razorpay_payment_id, payload.razorpay_signature)
+        async with db.execute("SELECT product_name, quantity, image FROM order_items WHERE order_id = ? ORDER BY id", (int(order["id"]),)) as cur:
+            item_rows = await cur.fetchall()
+        item_payload = [{"product_name": r["product_name"], "quantity": int(r["quantity"]), "image_url": str(r["image"] or "").strip()} for r in item_rows]
+        await trigger_order_event(db, {**order, "payment_status": "paid", "status": "processing", "customer_name": order.get("customer_name") or "Customer", "phone": order.get("phone") or ""}, item_payload)
         await process_notification_queue(db, settings.NOTIFICATION_BATCH_CHECKOUT)
         await set_session_value(request, "last_order_number", payload.order_number)
         await log_integration(db, "razorpay", "verify_payment", "success", "Payment signature verified.", payload.razorpay_payment_id)
@@ -502,6 +517,44 @@ def get_catalogue_fallback_answer(products: list, query: str, free_shipping: str
         "including Vedic A2 Gir Cow Bilona Ghee, Raw Forest Honey, MixMe Nutritive Blend, Burra Khandsari Sugar, and Taral Nasya Drops. "
         f"All orders above ₹{free_shipping} ship for free! What product would you like to know more about?"
     )
+
+class CheckoutLeadRequest(BaseModel):
+    phone: str
+    product_name: Optional[str] = ""
+    image_url: Optional[str] = ""
+    checkout_url: Optional[str] = ""
+    whatsapp_followup_opt_in: bool = False
+
+@router.post("/checkout/lead")
+async def checkout_lead(payload: CheckoutLeadRequest, db: aiosqlite.Connection = Depends(db_dep)):
+    phone = (payload.phone or "").strip()
+    if not re.match(r"^[0-9+()\s-]{8,18}$", phone):
+        raise HTTPException(status_code=422, detail={"message": "Enter a valid phone number."})
+    if not payload.whatsapp_followup_opt_in:
+        return {"ok": True, "message": "No follow-up consent was given."}
+
+    normalized_phone = re.sub(r"\D+", "", phone)
+    if len(normalized_phone) == 11 and normalized_phone.startswith("0"):
+        normalized_phone = normalized_phone[1:]
+    if len(normalized_phone) == 10:
+        normalized_phone = "91" + normalized_phone
+
+    async with db.execute("SELECT 1 FROM orders WHERE phone LIKE ? AND payment_status='paid' LIMIT 1", (f"%{normalized_phone[-10:]}%",)) as cur:
+        purchased = await cur.fetchone() is not None
+    lead = {
+        "phone": normalized_phone,
+        "whatsapp_followup_opt_in": True,
+        "whatsapp_marketing_opt_in": True,
+        "whatsapp_opted_out": False,
+        "purchased": purchased,
+        "product_name": payload.product_name or "Item in cart",
+        "image_url": payload.image_url or "",
+        "checkout_url": payload.checkout_url or "",
+        "abandoned_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+    }
+    if not purchased:
+        await trigger_checkout_abandoned_event(db, lead)
+    return {"ok": True, "purchased": purchased, "phone": normalized_phone}
 
 @router.post("/ai-chat")
 async def ai_chat(payload: AiChatRequest, request: Request, db: aiosqlite.Connection = Depends(db_dep)):

@@ -28,7 +28,7 @@ If you experience any quality or packaging issue:
 
 For questions about products, ingredients, traditional methods, or order support, reach out to our family team:
 • Email: care@gawdee.com
-• WhatsApp: +91 70552 07030
+• WhatsApp: +91 88910 66980
 • Operating hours: Monday to Saturday, 9:00 AM – 7:00 PM IST`,
 };
 
@@ -46,7 +46,7 @@ export default async function CMSPage({ params }: CMSPageProps) {
 
   let content = DEFAULT_PAGE_CONTENT[slug] || '';
   let email = 'care@gawdee.com';
-  let phone = '917055207030';
+  let phone = '918891066980';
 
   try {
     const res = await api.getStorefront();

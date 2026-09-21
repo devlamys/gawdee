@@ -37,6 +37,7 @@ yarn-error.log*
 *~
 .DS_Store
 Thumbs.db
+*.sqlite
 
 # ========================
 # Misc
@@ -163,3 +164,4 @@ skills-lock.json
 /sqlite
 *.db
 *.sqlite3
+backend/storage/gawdee.sqlite

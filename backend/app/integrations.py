@@ -10,8 +10,9 @@ import json
 import re
 import secrets
 import html
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
+from urllib.parse import urlsplit
 
 import aiosqlite
 import httpx
@@ -35,6 +36,7 @@ from .database import (
     get_setting,
     get_order_by_id,
     get_order_items,
+    get_products,
     log_integration,
     record_order_event,
     record_inventory_event,
@@ -173,6 +175,125 @@ def normalize_phone(phone: str) -> str:
     if len(digits) == 10:
         digits = "91" + digits
     return digits if re.match(r"^[1-9][0-9]{7,14}$", digits) else ""
+
+
+async def dispatch_n8n_event(db: aiosqlite.Connection, workflow_path: str, event: dict) -> bool:
+    """Send a normalized payload to the configured n8n webhook path."""
+    if not workflow_path or not isinstance(event, dict):
+        return False
+
+    key_map = {
+        "gawdee/order": "order",
+        "gawdee/followup": "followup",
+        "gawdee/marketing-wa": "marketing_wa",
+        "gawdee/marketing-sms": "marketing_sms",
+        "gawdee/marketing-email": "marketing_email",
+        "gawdee/support": "support",
+    }
+    slug = key_map.get(workflow_path, workflow_path.replace("/", "_").replace("-", "_"))
+    url = (await get_setting(db, f"n8n_{slug}_webhook_url")).strip()
+    if not url:
+        return False
+
+    parsed = urlsplit(url)
+    if not parsed.hostname or not (parsed.scheme in ("https", "http")):
+        raise RuntimeError("The n8n webhook URL is not valid.")
+    if parsed.scheme == "http" and parsed.hostname not in ("localhost", "127.0.0.1"):
+        raise RuntimeError("The n8n webhook URL must use HTTPS outside localhost.")
+
+    key = (await get_setting(db, f"n8n_{slug}_webhook_key")).strip()
+    if not key:
+        raise RuntimeError("The n8n webhook secret is missing.")
+
+    try:
+        await http_request(
+            "POST",
+            url,
+            {"Content-Type": "application/json", "X-Gawdee-Automation-Key": key},
+            event,
+        )
+        await log_integration(db, "n8n", f"dispatch_{slug}", "success", workflow_path, str(event.get("event_id") or event.get("message_id") or ""))
+        return True
+    except Exception as exc:
+        await log_integration(db, "n8n", f"dispatch_{slug}", "failed", workflow_path, str(exc)[:500])
+        return False
+
+
+async def trigger_order_event(db: aiosqlite.Connection, order: dict, items: list[dict]) -> bool:
+    """Emit the real n8n order-confirmed event using the saved order and item snapshot."""
+    if not order or not items:
+        return False
+
+    event = {
+        "type": "order.confirmed",
+        "event_id": str(order.get("event_id") or f"order:{order.get('order_number') or 'unknown'}:confirmed"),
+        "order": {
+            "order_number": str(order.get("order_number") or ""),
+            "customer_name": str(order.get("customer_name") or "Customer").strip() or "Customer",
+            "phone": normalize_phone(str(order.get("phone") or "")),
+            "status": str(order.get("status") or "processing"),
+            "payment_method": str(order.get("payment_method") or "razorpay"),
+            "payment_status": str(order.get("payment_status") or "paid"),
+            "whatsapp_order_opt_in": bool(order.get("whatsapp_order_opt_in") or order.get("whatsapp_marketing_opt_in") or False),
+            "whatsapp_opted_out": bool(order.get("whatsapp_opted_out") or False),
+            "total": int(order.get("total") or 0),
+            "items": [{
+                "product_name": str(item.get("product_name") or item.get("name") or "Item"),
+                "quantity": int(item.get("quantity") or 1),
+                "image_url": str(item.get("image_url") or item.get("image") or "").strip(),
+            } for item in items],
+        },
+    }
+    return await dispatch_n8n_event(db, "gawdee/order", event)
+
+
+async def trigger_checkout_abandoned_event(db: aiosqlite.Connection, lead: dict) -> bool:
+    """Emit the checkout-abandoned lead payload for a phone + consent capture."""
+    if not isinstance(lead, dict):
+        return False
+    payload = build_checkout_abandoned_event(lead)
+    return await dispatch_n8n_event(db, "gawdee/followup", payload)
+
+
+async def trigger_campaign_offer_event(db: aiosqlite.Connection, recipient: dict, offer: dict, channel: str) -> bool:
+    """Emit the offer payload to the configured channel webhook."""
+    if not isinstance(recipient, dict) or not isinstance(offer, dict):
+        return False
+    mapping = {
+        "whatsapp": "gawdee/marketing-wa",
+        "sms": "gawdee/marketing-sms",
+        "email": "gawdee/marketing-email",
+    }
+    path = mapping.get(channel.lower(), "gawdee/marketing-wa")
+    payload = build_campaign_offer_event(recipient, offer)
+    return await dispatch_n8n_event(db, path, payload)
+
+
+async def dispatch_offer_campaigns(db: aiosqlite.Connection, offer: dict) -> int:
+    """Send one campaign event per active marketing recipient using the configured n8n endpoints."""
+    if not offer:
+        return 0
+
+    sent = 0
+    async with db.execute(
+        "SELECT id, name, email, phone, whatsapp_marketing_opt_in FROM users WHERE role='customer' AND whatsapp_marketing_opt_in = 1 ORDER BY id",
+    ) as cur:
+        rows = await cur.fetchall()
+    for row in rows:
+        recipient = {
+            "phone": row["phone"],
+            "email": row["email"],
+            "whatsapp_marketing_opt_in": True,
+            "sms_marketing_opt_in": False,
+            "email_marketing_opt_in": False,
+            "whatsapp_opted_out": False,
+            "sms_opted_out": False,
+            "email_opted_out": False,
+            "unsubscribe_url": "", 
+        }
+        if await trigger_campaign_offer_event(db, recipient, offer, "whatsapp"):
+            sent += 1
+    return sent
 
 
 # ── Delhivery ────────────────────────────────────────────────────────────────
@@ -340,12 +461,238 @@ def delhivery_map_order_status(status: str) -> Optional[str]:
 
 # ── WhatsApp Cloud API ────────────────────────────────────────────────────────
 
+def build_whatsapp_support_event(message: dict) -> Optional[dict]:
+    """Convert one signed Meta text callback into the n8n support event contract."""
+    phone = normalize_phone(str(message.get("from") or ""))
+    text = str((message.get("text") or {}).get("body") or (message.get("button") or {}).get("text") or "").strip()
+    message_id = str(message.get("id") or "").strip()
+    try:
+        received_at = datetime.fromtimestamp(int(message.get("timestamp")), tz=timezone.utc)
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+    if not phone or not text or not message_id:
+        return None
+    return {
+        "type": "whatsapp.message",
+        "message_id": message_id,
+        "from": phone,
+        "text": text,
+        "received_at": received_at.isoformat().replace("+00:00", "Z"),
+    }
+
+
+async def forward_whatsapp_support_event(db: aiosqlite.Connection, event: dict) -> bool:
+    """Forward an authenticated Meta message to the configured n8n support webhook."""
+    url = (await get_setting(db, "n8n_support_webhook_url")).strip()
+    if not url:
+        return False
+    parsed = urlsplit(url)
+    if not parsed.hostname or parsed.username or parsed.password or parsed.fragment or not (
+        parsed.scheme == "https" or
+        (parsed.scheme == "http" and parsed.hostname in ("localhost", "127.0.0.1"))
+    ):
+        raise RuntimeError("The n8n support webhook URL must use HTTPS or local HTTP.")
+    key = await get_setting(db, "n8n_support_webhook_key")
+    if not key:
+        raise RuntimeError("The n8n support webhook key is missing.")
+    await http_request(
+        "POST",
+        url,
+        {"Content-Type": "application/json", "X-Gawdee-Automation-Key": key},
+        event,
+    )
+    await log_integration(db, "n8n", "support_forward_accepted", "success", "n8n accepted the inbound WhatsApp event.", event["message_id"])
+    return True
+
+
+async def channel_configured(db: aiosqlite.Connection, channel: str) -> bool:
+    channel = (channel or "").lower()
+    if channel == "whatsapp":
+        return await whatsapp_configured(db)
+    if channel == "sms":
+        provider = (await get_setting(db, "sms_provider", "twilio")).lower()
+        return (
+            await get_setting(db, "sms_enabled", "0") == "1"
+            and provider in {"twilio", "generic"}
+            and (await get_setting(db, "sms_account_sid", "")).strip() != ""
+            and (await get_setting(db, "sms_auth_token", "")).strip() != ""
+            and (await get_setting(db, "sms_from_number", "")).strip() != ""
+        )
+    if channel == "email":
+        provider = (await get_setting(db, "email_provider", "sendgrid")).lower()
+        return (
+            await get_setting(db, "email_enabled", "0") == "1"
+            and provider in {"sendgrid", "smtp", "mailgun"}
+            and (
+                (provider == "sendgrid" and (await get_setting(db, "email_api_key", "")).strip() != "")
+                or (provider == "smtp" and (await get_setting(db, "smtp_host", "")).strip() != "")
+                or (provider == "mailgun" and (await get_setting(db, "mailgun_api_key", "")).strip() != "")
+            )
+            and (await get_setting(db, "email_from_email", "info@gawdee.com")).strip() != ""
+        )
+    return False
+
+
 async def whatsapp_configured(db: aiosqlite.Connection) -> bool:
     return (
         await get_setting(db, "whatsapp_cloud_enabled", "0") == "1"
         and await get_setting(db, "whatsapp_phone_number_id") != ""
         and await get_setting(db, "whatsapp_access_token") != ""
     )
+
+
+async def _user_channel_consent(db: aiosqlite.Connection, user_id: int, channel: str, notification_type: str = "marketing") -> bool:
+    if not user_id:
+        return True
+    channel = (channel or "").lower()
+    if notification_type == "followup":
+        async with db.execute(
+            "SELECT whatsapp_followup_opt_in, whatsapp_opt_out_at FROM users WHERE id=? AND role='customer' LIMIT 1",
+            (int(user_id),),
+        ) as cur:
+            row = await cur.fetchone()
+        return bool(row and int(row["whatsapp_followup_opt_in"] or 0) == 1 and row["whatsapp_opt_out_at"] is None)
+
+    col_map = {
+        "whatsapp": ("whatsapp_marketing_opt_in", "whatsapp_opt_out_at"),
+        "sms": ("sms_marketing_opt_in", "sms_opt_out_at"),
+        "email": ("email_marketing_opt_in", "email_opt_out_at"),
+    }
+    col, opt_out_col = col_map.get(channel, (None, None))
+    if not col or not opt_out_col:
+        return False
+    async with db.execute(
+        f"SELECT {col}, {opt_out_col} FROM users WHERE id=? AND role='customer' LIMIT 1",
+        (int(user_id),),
+    ) as cur:
+        row = await cur.fetchone()
+    if not row:
+        return False
+    return bool(int(row[col] or 0) == 1 and row[opt_out_col] is None)
+
+
+async def _campaign_sent_recently(db: aiosqlite.Connection, user_id: int, channel: str) -> bool:
+    if not user_id:
+        return False
+    async with db.execute(
+        "SELECT 1 FROM notification_queue WHERE user_id=? AND channel=? AND notification_type='marketing' AND status='sent' AND sent_at >= datetime('now', '-24 hours') LIMIT 1",
+        (int(user_id), channel.lower()),
+    ) as cur:
+        return await cur.fetchone() is not None
+
+
+async def sms_send_message(db: aiosqlite.Connection, phone: str, text: str) -> dict:
+    if not await channel_configured(db, "sms"):
+        raise RuntimeError("SMS is not configured or enabled.")
+    phone = normalize_phone(phone)
+    text = (text or "").strip()
+    if not phone or not text:
+        raise RuntimeError("SMS recipient or message body is invalid.")
+
+    provider = (await get_setting(db, "sms_provider", "twilio")).lower()
+    if provider == "twilio":
+        sid = (await get_setting(db, "sms_account_sid", "")).strip()
+        token = (await get_setting(db, "sms_auth_token", "")).strip()
+        from_number = (await get_setting(db, "sms_from_number", "")).strip()
+        if not sid or not token or not from_number:
+            raise RuntimeError("Twilio SMS credentials are incomplete.")
+        payload = {
+            "To": f"+{phone}",
+            "From": from_number if from_number.startswith("+") else f"+{from_number}",
+            "Body": text[:1600],
+        }
+        response = await http_request(
+            "POST",
+            f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json",
+            {},
+            payload,
+            body_mode="form",
+            basic_auth=(sid, token),
+        )
+        data = response["data"]
+        message_id = str(data.get("sid") or data.get("messageId") or "")
+        await log_integration(db, "sms", "send_message", "success", phone, message_id)
+        return {"message_id": message_id, "response": data}
+
+    raise RuntimeError(f"The configured SMS provider '{provider}' is not supported yet.")
+
+
+async def email_send_message(db: aiosqlite.Connection, email: str, subject: str, text: str) -> dict:
+    if not await channel_configured(db, "email"):
+        raise RuntimeError("Email delivery is not configured or enabled.")
+    email = str(email or "").strip().lower()
+    subject = (subject or "Gawdee update").strip()[:200]
+    text = (text or "").strip()
+    if not email or not text:
+        raise RuntimeError("Email recipient or message body is invalid.")
+
+    provider = (await get_setting(db, "email_provider", "sendgrid")).lower()
+    if provider == "sendgrid":
+        api_key = (await get_setting(db, "email_api_key", "")).strip()
+        from_email = (await get_setting(db, "email_from_email", "info@gawdee.com")).strip()
+        if not api_key or not from_email:
+            raise RuntimeError("SendGrid email credentials are incomplete.")
+        payload = {
+            "personalizations": [{"to": [{"email": email}]}],
+            "from": {"email": from_email, "name": await get_setting(db, "email_from_name", "Gawdee")},
+            "subject": subject,
+            "content": [{"type": "text/plain", "value": text[:10000]}],
+        }
+        response = await http_request(
+            "POST",
+            "https://api.sendgrid.com/v3/mail/send",
+            {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            payload,
+        )
+        message_id = str(response.get("status") or "")
+        await log_integration(db, "email", "send_message", "success", email, message_id)
+        return {"message_id": message_id, "response": response["data"]}
+
+    raise RuntimeError(f"The configured email provider '{provider}' is not supported yet.")
+
+
+async def whatsapp_send_text(
+    db: aiosqlite.Connection,
+    phone: str,
+    text: str,
+) -> dict:
+    """Send a plain WhatsApp text reply for product support or follow-up conversations."""
+    if not await whatsapp_configured(db):
+        raise RuntimeError("WhatsApp Cloud API is not configured or enabled.")
+    phone = normalize_phone(phone)
+    text = (text or "").strip()
+    if not phone or len(text) < 1:
+        raise RuntimeError("The WhatsApp recipient or message body is invalid.")
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": phone,
+        "type": "text",
+        "text": {"body": text[:2000]},
+    }
+
+    version = await get_setting(db, "whatsapp_graph_version", "v23.0")
+    if not re.match(r"^v[0-9]+\.[0-9]+$", version):
+        version = "v23.0"
+    phone_id = await get_setting(db, "whatsapp_phone_number_id")
+    access_token = await get_setting(db, "whatsapp_access_token")
+
+    try:
+        response = await http_request(
+            "POST",
+            f"{settings.WHATSAPP_GRAPH_BASE_URL}/{version}/{phone_id}/messages",
+            {"Content-Type": "application/json", "Authorization": f"Bearer {access_token}"},
+            payload,
+        )
+        message_id = str(response["data"].get("messages", [{}])[0].get("id", ""))
+        if not message_id:
+            raise RuntimeError("WhatsApp accepted the text message but returned no message ID.")
+        await log_integration(db, "whatsapp", "send_text", "success", phone, message_id)
+        return {"message_id": message_id, "response": response["data"]}
+    except Exception as error:
+        await log_integration(db, "whatsapp", "send_text", "failed", str(error), phone)
+        raise
 
 
 async def whatsapp_send_template(
@@ -420,6 +767,183 @@ def order_tracking_reference(order: dict) -> str:
     return str(order.get("tracking_number") or order.get("delhivery_waybill") or order.get("dtdc_reference") or "")
 
 
+def build_order_whatsapp_payload(order: dict, items: list[dict]) -> dict:
+    """Create a rich WhatsApp order update payload with item image preview."""
+    item = items[0] if items else {}
+    product_name = str(item.get("product_name") or item.get("name") or "your order").strip() or "your order"
+    variant_name = str(item.get("variant_name") or item.get("variant") or "").strip()
+    image_url = str(item.get("image_url") or item.get("image") or "").strip()
+    item_label = f"{product_name} {variant_name}".strip()
+    order_number = str(order.get("order_number") or "order").strip()
+    customer_name = str(order.get("customer_name") or "Customer").strip() or "Customer"
+    total = int(order.get("total") or 0)
+    method = str(order.get("payment_method") or "order").strip() or "order"
+
+    text = (
+        f"Hi {customer_name}! Your order {order_number} is confirmed. "
+        f"Item: {item_label}. Total: ₹{total:,}. Payment: {method}. "
+        "We’ll keep you updated on packing and delivery."
+    )
+    return {"text": text, "image_url": image_url, "item_name": item_label}
+
+
+def build_checkout_abandoned_event(lead: dict) -> dict:
+    """Prepare an n8n checkout-abandoned follow-up event with normalized contact details."""
+    phone = normalize_phone(str(lead.get("phone") or ""))
+    if not phone:
+        raise ValueError("A valid phone number is required for abandoned checkout follow-up.")
+    event = {
+        "type": "checkout.abandoned",
+        "event_id": str(lead.get("event_id") or f"cart:{phone}:followup:{int(datetime.now(timezone.utc).timestamp())}"),
+        "lead": {
+            "phone": phone,
+            "whatsapp_followup_opt_in": bool(lead.get("whatsapp_followup_opt_in") or lead.get("whatsapp_marketing_opt_in") or False),
+            "whatsapp_opted_out": bool(lead.get("whatsapp_opted_out") or False),
+            "purchased": bool(lead.get("purchased") or False),
+            "abandoned_at": str(lead.get("abandoned_at") or datetime.now(timezone.utc).isoformat()),
+            "purchase_checked_at": str(lead.get("purchase_checked_at") or datetime.now(timezone.utc).isoformat()),
+            "product_name": str(lead.get("product_name") or "Item in cart").strip() or "Item in cart",
+            "image_url": str(lead.get("image_url") or "").strip(),
+            "checkout_url": str(lead.get("checkout_url") or "").strip(),
+        },
+    }
+    return event
+
+
+def build_campaign_offer_event(recipient: dict, offer: dict) -> dict:
+    """Prepare a marketing offer event for WhatsApp, SMS or email channels."""
+    phone = normalize_phone(str(recipient.get("phone") or ""))
+    email = str(recipient.get("email") or "").strip().lower()
+    event = {
+        "type": "campaign.offer",
+        "event_id": str(recipient.get("event_id") or offer.get("event_id") or f"campaign:{int(datetime.now(timezone.utc).timestamp())}"),
+        "recipient": {
+            "phone": phone,
+            "email": email,
+            "whatsapp_marketing_opt_in": bool(recipient.get("whatsapp_marketing_opt_in") or False),
+            "sms_marketing_opt_in": bool(recipient.get("sms_marketing_opt_in") or False),
+            "email_marketing_opt_in": bool(recipient.get("email_marketing_opt_in") or False),
+            "whatsapp_opted_out": bool(recipient.get("whatsapp_opted_out") or False),
+            "sms_opted_out": bool(recipient.get("sms_opted_out") or False),
+            "email_opted_out": bool(recipient.get("email_opted_out") or False),
+            "unsubscribe_url": str(recipient.get("unsubscribe_url") or "").strip(),
+        },
+        "offer": {
+            "title": str(offer.get("title") or "Special offer").strip() or "Special offer",
+            "description": str(offer.get("description") or "").strip(),
+            "url": str(offer.get("url") or "").strip(),
+            "image_url": str(offer.get("image_url") or "").strip(),
+        },
+    }
+    return event
+
+
+def build_product_query_answer(query: str, products: list[dict], free_shipping: str, store_email: str) -> str:
+    """Generate a helpful WhatsApp-style product answer using the product catalog."""
+    q = (query or "").lower()
+    if not products:
+        return (
+            "I’m not able to find a matching product right now. Please share the product name or variant you want, "
+            f"and we can help in WhatsApp. For support, email {store_email}."
+        )
+
+    candidate = None
+    for product in products:
+        haystack = " ".join([
+            str(product.get("full_name") or ""),
+            str(product.get("name") or ""),
+            str(product.get("description") or ""),
+            str(product.get("tag") or ""),
+        ]).lower()
+        if any(word in haystack for word in ["ghee", "honey", "mixme", "burra", "taral", "sugar"]):
+            if any(word in q for word in ["ghee", "honey", "mixme", "burra", "taral"]):
+                candidate = product
+                break
+        if any(word in q for word in ["ghee", "honey", "mixme", "burra", "taral", "variant", "price"]) and any(word in haystack for word in q.split() if len(word) > 2):
+            candidate = product
+            break
+    candidate = candidate or products[0]
+
+    product_name = str(candidate.get("full_name") or candidate.get("name") or "This product")
+    price = int(candidate.get("price") or candidate.get("selling_price") or 0)
+    description = str(candidate.get("description") or "").strip()
+    image = str(candidate.get("image") or candidate.get("primary_image") or "").strip()
+    variant_hint = "We offer this product in multiple sizes and pack options. Reply with the product name to get the latest variant list or check our catalogue."
+    if "variant" in q or "size" in q or "pack" in q:
+        variant_hint = (
+            f"{product_name} is available in our standard Gawdee pack options. "
+            f"You can also browse the full variant range on the product page."
+        )
+
+    return (
+        f"{product_name} is a favorite pick at Gawdee. "
+        f"Starting price: ₹{price:,}. {description or 'A wholesome, natural product designed for everyday wellness.'} "
+        f"{variant_hint} Free shipping is available above ₹{free_shipping}. For support, contact {store_email}."
+        f"{f' Image: {image}' if image else ''}"
+    )
+
+
+async def queue_marketing_notification(db: aiosqlite.Connection, user_id: int, channel: str, message: str, product_name: str = "") -> bool:
+    """Queue a WhatsApp/SMS/email marketing or offer update for a user."""
+    async with db.execute("SELECT id, email, phone, whatsapp_marketing_opt_in FROM users WHERE id=? AND role='customer' LIMIT 1", (user_id,)) as cur:
+        user = await cur.fetchone()
+    if not user:
+        return False
+    recipient = normalize_phone(str(user["phone"])) if channel in ("whatsapp", "sms") else str(user["email"] or "").strip()
+    if not recipient:
+        return False
+    if channel == "whatsapp":
+        consent = int(user["whatsapp_marketing_opt_in"] or 0)
+        if consent != 1:
+            return False
+    dedupe = f"marketing:{channel}:{user_id}:{product_name or 'general'}:{message[:80]}"
+    await db.execute(
+        "INSERT OR IGNORE INTO notification_queue (user_id, channel, notification_type, recipient, template_name, language, variables_json, dedupe_key, status) VALUES (?, ?, 'marketing', ?, ?, ?, ?, ?, 'queued')",
+        (user_id, channel, recipient, "marketing_update", "en_US", json.dumps([message], ensure_ascii=False), dedupe),
+    )
+    await db.commit()
+    return True
+
+
+async def queue_visitor_followup(db: aiosqlite.Connection, phone: str, message: str) -> bool:
+    """Create a follow-up message for a site visitor who did not purchase."""
+    phone = normalize_phone(phone)
+    if not phone:
+        return False
+    dedupe = f"visitor_followup:{phone}:{message[:80]}"
+    await db.execute(
+        "INSERT OR IGNORE INTO notification_queue (order_id, user_id, channel, notification_type, recipient, template_name, language, variables_json, dedupe_key, status) VALUES (NULL, NULL, 'whatsapp', 'followup', ?, ?, ?, ?, ?, 'queued')",
+        (phone, "visitor_followup", "en_US", json.dumps([message], ensure_ascii=False), dedupe),
+    )
+    await db.commit()
+    return True
+
+
+async def auto_reply_product_question(db: aiosqlite.Connection, phone: str, message: str) -> Optional[str]:
+    """Answer common product/variant questions automatically via WhatsApp."""
+    query = (message or "").strip()
+    if not query:
+        return None
+
+    products = await get_products(db)
+    if not products:
+        return None
+    answer = build_product_query_answer(
+        query,
+        products,
+        await get_setting(db, "free_shipping_threshold", "999"),
+        await get_setting(db, "store_email", "info@gawdee.com"),
+    )
+    if not answer:
+        return None
+
+    try:
+        await whatsapp_send_text(db, phone, answer)
+    except Exception:
+        await queue_visitor_followup(db, phone, answer)
+    return answer
+
+
 async def queue_order_notification(db: aiosqlite.Connection, order_id: int, notification_type: str) -> bool:
     """Mirrors gawdee_queue_order_notification."""
     if await get_setting(db, "whatsapp_cloud_enabled", "0") != "1" or await get_setting(db, "whatsapp_order_notifications", "1") != "1":
@@ -461,42 +985,101 @@ async def queue_order_notification(db: aiosqlite.Connection, order_id: int, noti
 
 
 async def process_notification_queue(db: aiosqlite.Connection, limit: int = 20) -> dict:
-    """Mirrors gawdee_process_notification_queue."""
+    """Process queued WhatsApp/SMS/email notifications with consent, retries, and per-channel dispatch."""
     result = {"sent": 0, "failed": 0, "skipped": 0}
-    if not await whatsapp_configured(db):
-        return result
 
     limit = min(100, max(1, limit))
     async with db.execute(
-        f"SELECT * FROM notification_queue WHERE status IN ('queued','retry') AND attempts < 5 AND scheduled_at <= CURRENT_TIMESTAMP ORDER BY id LIMIT {limit}"
+        "SELECT * FROM notification_queue WHERE status IN ('queued','retry') AND attempts < 5 AND scheduled_at <= CURRENT_TIMESTAMP ORDER BY id LIMIT ?",
+        (limit,),
     ) as cur:
         rows = await cur.fetchall()
 
     for row in rows:
         row = dict(row)
-        if row["notification_type"] == "marketing":
-            consent = False
-            if row["user_id"]:
-                async with db.execute(
-                    "SELECT whatsapp_marketing_opt_in FROM users WHERE id=? AND whatsapp_opt_out_at IS NULL",
-                    (int(row["user_id"]),),
-                ) as cur:
-                    consent_row = await cur.fetchone()
-                consent = bool(consent_row and int(consent_row["whatsapp_marketing_opt_in"]) == 1)
-            if not consent or await get_setting(db, "whatsapp_marketing_enabled", "0") != "1":
+        channel = (row.get("channel") or "whatsapp").lower()
+
+        if row["notification_type"] == "marketing" and row.get("user_id"):
+            if not await _user_channel_consent(db, int(row["user_id"]), channel, "marketing"):
                 await db.execute(
-                    "UPDATE notification_queue SET status='cancelled', error_message='No active marketing consent.', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    "UPDATE notification_queue SET status='cancelled', error_message='No active channel consent.', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (int(row["id"]),),
+                )
+                result["skipped"] += 1
+                continue
+            if await _campaign_sent_recently(db, int(row["user_id"]), channel):
+                await db.execute(
+                    "UPDATE notification_queue SET status='cancelled', error_message='Campaign frequency window reached.', updated_at=CURRENT_TIMESTAMP WHERE id=?",
                     (int(row["id"]),),
                 )
                 result["skipped"] += 1
                 continue
 
+        if row["notification_type"] == "followup":
+            if row.get("user_id") and not await _user_channel_consent(db, int(row["user_id"]), "whatsapp", "followup"):
+                await db.execute(
+                    "UPDATE notification_queue SET status='cancelled', error_message='Follow-up opt-in was removed.', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (int(row["id"]),),
+                )
+                result["skipped"] += 1
+                continue
+            phone = normalize_phone(str(row["recipient"] or ""))
+            if not phone:
+                await db.execute(
+                    "UPDATE notification_queue SET status='cancelled', error_message='No valid follower phone.', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (int(row["id"]),),
+                )
+                result["skipped"] += 1
+                continue
+            try:
+                payload = json.loads(row["variables_json"] or "[]")
+                message = payload[0] if isinstance(payload, list) and payload else "We noticed you left items in your cart. Shop again when you are ready."
+                if not await channel_configured(db, "whatsapp"):
+                    await db.execute(
+                        "UPDATE notification_queue SET status='cancelled', error_message='WhatsApp is not configured.', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                        (int(row["id"]),),
+                    )
+                    result["skipped"] += 1
+                    continue
+                sent = await whatsapp_send_text(db, phone, message)
+                await db.execute(
+                    "UPDATE notification_queue SET status='sent', attempts=attempts+1, provider_message_id=?, error_message='', sent_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (sent.get("message_id", ""), int(row["id"])),
+                )
+                result["sent"] += 1
+            except Exception as error:
+                await db.execute(
+                    "UPDATE notification_queue SET status=CASE WHEN attempts+1 >= 5 THEN 'failed' ELSE 'retry' END, attempts=attempts+1, error_message=?, scheduled_at=datetime('now', '+' || MIN(60, (attempts+1)*(attempts+1)*5) || ' minutes'), updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (str(error)[:1000], int(row["id"])),
+                )
+                result["failed"] += 1
+            continue
+
         try:
             variables = json.loads(row["variables_json"] or "[]")
-            sent = await whatsapp_send_template(db, row["recipient"], row["template_name"], variables if isinstance(variables, list) else [], row["language"])
+            if channel == "whatsapp":
+                if not await whatsapp_configured(db):
+                    raise RuntimeError("WhatsApp Cloud API is not configured or enabled.")
+                sent = await whatsapp_send_template(db, row["recipient"], row["template_name"], variables if isinstance(variables, list) else [], row["language"])
+                provider_message_id = sent.get("message_id", "")
+            elif channel == "sms":
+                if not await channel_configured(db, "sms"):
+                    raise RuntimeError("SMS is not configured or enabled.")
+                text = row["template_name"] if row["template_name"] else (variables[0] if isinstance(variables, list) and variables else "")
+                sent = await sms_send_message(db, row["recipient"], text)
+                provider_message_id = sent.get("message_id", "")
+            elif channel == "email":
+                if not await channel_configured(db, "email"):
+                    raise RuntimeError("Email is not configured or enabled.")
+                text = row["template_name"] if row["template_name"] else (variables[0] if isinstance(variables, list) and variables else "")
+                sent = await email_send_message(db, row["recipient"], row["template_name"] or "Gawdee update", text)
+                provider_message_id = sent.get("message_id", "")
+            else:
+                raise RuntimeError(f"Unsupported notification channel: {channel}")
+
             await db.execute(
                 "UPDATE notification_queue SET status='sent', attempts=attempts+1, provider_message_id=?, error_message='', sent_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                (sent["message_id"], int(row["id"])),
+                (provider_message_id, int(row["id"])),
             )
             result["sent"] += 1
         except Exception as error:

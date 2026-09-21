@@ -30,6 +30,7 @@ from .database import (
     resolve_combo_product,
     combo_available_stock,
 )
+from .loyalty import create_pending_purchase_reward, price_loyalty_lines, redeem_reservation, reserve_coins
 from .core.config import settings
 
 
@@ -46,7 +47,7 @@ ORDER_STATUS_LABELS = {
 
 ORDER_STATUS_TRANSITIONS = {
     "pending": ["processing", "on_hold", "cancelled"],
-    "processing": ["packed", "on_hold", "cancelled"],
+    "processing": ["packed", "on_hold", "cancelled", "delivered", "refunded"],
     "packed": ["processing", "shipped", "cancelled"],
     "shipped": ["delivered", "on_hold"],
     "delivered": ["refunded"],
@@ -68,6 +69,16 @@ async def checkout_pricing(db: aiosqlite.Connection, requested_items: list[dict]
     for req in requested_items:
         prod_id = str(req.get("id", ""))
         product = await get_product_by_id(db, prod_id)
+        if product:
+            # Legacy product rows can mirror a canonical variant. Use its
+            # stock for pricing and reservation so both views stay aligned.
+            canonical = await get_variant_by_ref(db, prod_id, True)
+            if canonical:
+                if not canonical["is_active"] or not canonical["item_is_active"]:
+                    raise ValueError("A product in the cart is no longer available.")
+                product = {**product, "variant_id": canonical["id"],
+                           "legacy_product_id": canonical.get("legacy_product_id") or "",
+                           "item_id": canonical["item_id"]}
         if not product:
             var = await get_variant_by_ref(db, prod_id, False)
             if var:
@@ -127,9 +138,11 @@ async def create_local_order(
     user_id: Optional[int],
     checkout_token: str,
     coupon_code: str = "",
+    loyalty_coins: int = 0,
 ) -> dict:
     """Mirrors gawdee_create_local_order."""
     payment_method = "cod" if payment_method == "cod" else "razorpay"
+    loyalty_coins = max(0, int(loyalty_coins or 0))
     if not re.match(r"^[A-Za-z0-9_-]{16,100}$", checkout_token):
         raise ValueError("Checkout session is invalid. Refresh the checkout page and try again.")
 
@@ -141,6 +154,7 @@ async def create_local_order(
         return order
 
     pricing = await checkout_pricing(db, requested_items, coupon_code)
+    line_pricing = await price_loyalty_lines(db, pricing)
     order_number = "GD" + datetime.now().strftime("%y%m%d") + secrets.token_hex(3).upper()
     status = "processing" if payment_method == "cod" else "pending"
     payment_status = "cod_pending" if payment_method == "cod" else "initializing"
@@ -161,8 +175,6 @@ async def create_local_order(
     )
     fulfillment_mode = "delhivery" if delhivery_ready else ("dtdc" if dtdc_ready else "manual")
 
-    async with db.execute("BEGIN"):
-        pass
     try:
         # Stock check
         for line in pricing["items"]:
@@ -183,20 +195,24 @@ async def create_local_order(
 
         # Insert order
         await db.execute(
-            f"""INSERT INTO orders
+            """INSERT INTO orders
             (user_id, order_number, status, payment_method, payment_status, shipment_status, currency,
              subtotal, shipping, discount, total, coupon_code, checkout_token,
              customer_name, email, phone, address1, address2, city, state, pincode, notes,
-             fulfillment_mode, inventory_status)
-            VALUES (?, ?, ?, ?, ?, 'awaiting_fulfillment', '{settings.CURRENCY}', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             fulfillment_mode, inventory_status, loyalty_eligible_paise, loyalty_discount_paise, loyalty_coins_redeemed)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 user_id, order_number, status, payment_method, payment_status,
+                "awaiting_fulfillment", settings.CURRENCY,
                 pricing["subtotal"], pricing["shipping"], pricing["discount"], pricing["total"],
                 pricing["coupon_code"], checkout_token,
                 fields["name"], fields["email"], fields["phone"],
                 fields["address1"], fields.get("address2", ""),
                 fields["city"], fields["state"], fields["pincode"], fields.get("notes", ""),
                 fulfillment_mode, inventory_status,
+                int(line_pricing["eligible_paise"]),
+                int(loyalty_coins),
+                int(loyalty_coins),
             ),
         )
         async with db.execute("SELECT last_insert_rowid()") as cur:
@@ -210,6 +226,27 @@ async def create_local_order(
                 "INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, image) VALUES (?, ?, ?, ?, ?, ?)",
                 (order_id, product["id"], product["full_name"], quantity, product["price"], product.get("image", "")),
             )
+            async with db.execute("SELECT last_insert_rowid()") as cur:
+                item_id = int((await cur.fetchone())[0])
+            # keep the row in sync with the loyalty pricing snapshot for earnings / redemption calculations.
+            line_snapshot = next((entry for entry in line_pricing["lines"] if str(entry["product_id"]) == str(product["id"])), None)
+            if line_snapshot and user_id is not None:
+                await db.execute(
+                    "INSERT INTO loyalty_order_lines (order_item_id, order_id, customer_id, quantity, gross_paise, coupon_discount_paise, eligible_paise, redeemable_paise, multiplier, earn_excluded, redeem_excluded) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        item_id,
+                        order_id,
+                        int(user_id),
+                        int(quantity),
+                        int(line_snapshot.get("gross_paise", 0)),
+                        int(line_snapshot.get("coupon_discount_paise", 0)),
+                        int(line_snapshot.get("eligible_paise", 0)),
+                        int(line_snapshot.get("redeemable_paise", 0)),
+                        int(line_snapshot.get("multiplier", 1)),
+                        int(1 if line_snapshot.get("earn_excluded") else 0),
+                        int(1 if line_snapshot.get("redeem_excluded") else 0),
+                    ),
+                )
             identity = resolve_variant_identity(product)
             if product.get("combo_id"):
                 # Bundle line: reserve one unit of each backing product.
@@ -268,6 +305,13 @@ async def create_local_order(
             if payment_method == "cod"
             else "Order saved securely. Online payment is being prepared."
         )
+        if loyalty_coins > 0 and user_id:
+            await reserve_coins(db, int(user_id), order_id, loyalty_coins, checkout_token, payment_method)
+            await db.execute(
+                "UPDATE orders SET loyalty_discount_paise=?, loyalty_coins_redeemed=? WHERE id=?",
+                (loyalty_coins, loyalty_coins, order_id),
+            )
+
         await record_order_event(db, order_id, status, "Order received", description)
         await db.commit()
     except Exception:
@@ -338,6 +382,28 @@ async def update_order_status(db: aiosqlite.Connection, order_id: int, new_statu
         "delivered": "Order delivered", "on_hold": "Order needs attention",
         "cancelled": "Order cancelled", "refunded": "Order refunded",
     }
+    if new_status == "delivered":
+        from .loyalty import schedule_order_release
+        await schedule_order_release(db, order_id)
+    elif new_status == "refunded":
+        from .loyalty import append_transaction
+        order = await get_order_by_id(db, order_id)
+        if order and order.get("user_id") and int(order.get("loyalty_coins_redeemed") or 0) > 0:
+            await append_transaction(
+                db,
+                int(order["user_id"]),
+                "REFUND_REVERSAL",
+                int(order["loyalty_coins_redeemed"] or 0),
+                int(order["loyalty_coins_redeemed"] or 0),
+                0,
+                0,
+                f"REFUND_REVERSAL:ORDER:{order_id}",
+                "AVAILABLE",
+                order_id=order_id,
+                description="Coins restored after order refund",
+                allow_negative=True,
+            )
+
     await record_order_event(
         db, order_id, new_status,
         titles.get(new_status, "Order updated"),
@@ -430,37 +496,73 @@ async def mark_payment_failed(db: aiosqlite.Connection, order_id: int, message: 
 
 async def mark_order_paid(db: aiosqlite.Connection, order_id: int, payment_id: str = "", signature: str = "") -> None:
     """Mirrors gawdee_mark_order_paid."""
-    async with db.execute("SELECT payment_status, inventory_status FROM orders WHERE id = ?", (order_id,)) as cur:
+    async with db.execute("SELECT payment_status, inventory_status, user_id, loyalty_coins_redeemed FROM orders WHERE id = ?", (order_id,)) as cur:
         order = await cur.fetchone()
     if not order:
         raise ValueError("Order not found.")
 
     if order["payment_status"] != "paid":
         if order["inventory_status"] not in ("reserved", "deducted"):
-            # Re-check and re-deduct stock
+            # A capture can arrive after the reservation expired. Restore the
+            # reservation atomically, including the canonical variant stock.
             items = await get_order_items(db, order_id)
-            for item in items:
-                async with db.execute("SELECT stock FROM products WHERE id = ?", (item["product_id"],)) as cur:
-                    stock_row = await cur.fetchone()
-                if not stock_row or int(stock_row["stock"]) < int(item["quantity"]):
-                    await db.execute(
-                        "UPDATE orders SET payment_status='paid', status='on_hold', payment_error='Payment received, but stock needs manual review.', paid_at=CURRENT_TIMESTAMP, cancelled_at=NULL, razorpay_payment_id=CASE WHEN ?='' THEN razorpay_payment_id ELSE ? END, razorpay_signature=CASE WHEN ?='' THEN razorpay_signature ELSE ? END, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                        (payment_id, payment_id, signature, signature, order_id),
-                    )
-                    await record_order_event(order_id, "on_hold", "Payment received — stock review needed",
-                        "Payment is secure, but fulfilment needs an inventory check by the store team.")
-                    await db.commit()
-                    return
-            for item in items:
+            await db.execute("SAVEPOINT paid_inventory")
+            try:
+                for item in items:
+                    pid = str(item["product_id"])
+                    qty = int(item["quantity"])
+                    variant = await get_variant_by_ref(db, pid, True)
+                    if variant:
+                        async with db.execute(
+                            "UPDATE variant SET stock=stock-? WHERE id=? AND stock>=?",
+                            (qty, variant["id"], qty),
+                        ) as cur:
+                            if cur.rowcount != 1:
+                                raise ValueError("Insufficient stock after payment capture")
+                        async with db.execute("SELECT stock FROM variant WHERE id=?", (variant["id"],)) as cur:
+                            balance = int((await cur.fetchone())["stock"])
+                        mirror_id = str(variant.get("legacy_product_id") or variant["id"])
+                        await db.execute(
+                            "UPDATE products SET stock=?, stock_status=CASE WHEN ?<=0 THEN 'out_of_stock' ELSE 'in_stock' END WHERE id=?",
+                            (balance, balance, mirror_id),
+                        )
+                        await record_inventory_event(db, mirror_id, -qty, balance, "Reserved after late payment capture", order_id)
+                    else:
+                        async with db.execute(
+                            "UPDATE products SET stock=stock-?, stock_status=CASE WHEN stock-?<=0 THEN 'out_of_stock' ELSE 'in_stock' END WHERE id=? AND stock>=?",
+                            (qty, qty, pid, qty),
+                        ) as cur:
+                            if cur.rowcount != 1:
+                                raise ValueError("Insufficient stock after payment capture")
+                        async with db.execute("SELECT stock FROM products WHERE id=?", (pid,)) as cur:
+                            balance = int((await cur.fetchone())["stock"])
+                        await record_inventory_event(db, pid, -qty, balance, "Reserved after late payment capture", order_id)
+                await db.execute("RELEASE SAVEPOINT paid_inventory")
+            except ValueError:
+                await db.execute("ROLLBACK TO SAVEPOINT paid_inventory")
+                await db.execute("RELEASE SAVEPOINT paid_inventory")
                 await db.execute(
-                    "UPDATE products SET stock = stock - ?, stock_status = CASE WHEN stock - ? <= 0 THEN 'out_of_stock' ELSE 'in_stock' END WHERE id = ?",
-                    (int(item["quantity"]), int(item["quantity"]), item["product_id"]),
+                    "UPDATE orders SET payment_status='paid', status='on_hold', payment_error='Payment received, but stock needs manual review.', paid_at=CURRENT_TIMESTAMP, cancelled_at=NULL, razorpay_payment_id=CASE WHEN ?='' THEN razorpay_payment_id ELSE ? END, razorpay_signature=CASE WHEN ?='' THEN razorpay_signature ELSE ? END, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (payment_id, payment_id, signature, signature, order_id),
                 )
+                await record_order_event(db, order_id, "on_hold", "Payment received — stock review needed",
+                    "Payment is secure, but fulfilment needs an inventory check by the store team.")
+                await db.commit()
+                return
+            except Exception:
+                await db.execute("ROLLBACK TO SAVEPOINT paid_inventory")
+                await db.execute("RELEASE SAVEPOINT paid_inventory")
+                raise
 
         await db.execute(
             "UPDATE orders SET payment_status='paid', status='processing', shipment_status='awaiting_fulfillment', inventory_status='deducted', payment_error='', paid_at=CURRENT_TIMESTAMP, cancelled_at=NULL, razorpay_payment_id=CASE WHEN ?='' THEN razorpay_payment_id ELSE ? END, razorpay_signature=CASE WHEN ?='' THEN razorpay_signature ELSE ? END, updated_at=CURRENT_TIMESTAMP WHERE id=?",
             (payment_id, payment_id, signature, signature, order_id),
         )
+        user_id = int(order["user_id"]) if order["user_id"] is not None else None
+        if user_id is not None:
+            await create_pending_purchase_reward(db, order_id)
+        if user_id is not None and int(order["loyalty_coins_redeemed"] or 0) > 0:
+            await redeem_reservation(db, order_id)
         await record_order_event(db, order_id, "processing", "Payment confirmed",
             "Secure online payment was verified and the order moved to processing.")
     elif payment_id or signature:

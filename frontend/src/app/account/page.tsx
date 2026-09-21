@@ -170,6 +170,11 @@ export default function AccountPage() {
           </button>
         </div>
 
+        <Link href="/account/loyalty" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', background: '#f4faf8', border: '1px solid #d9ede7', borderRadius: '16px', padding: '1.1rem 1.4rem', marginBottom: '2rem', color: '#007e6f' }}>
+          <span><i className="ph ph-coins" style={{ fontSize: '1.4rem', verticalAlign: 'middle', marginRight: '0.5rem' }}></i><strong>My Loyalty Wallet</strong><small style={{ display: 'block', color: '#666', marginTop: '0.3rem' }}>See available coins, pending rewards, and transaction history.</small></span>
+          <i className="ph ph-arrow-right"></i>
+        </Link>
+
         {/* Tab switcher */}
         <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', borderBottom: '1px solid #eee', paddingBottom: '0.5rem' }}>
           <button

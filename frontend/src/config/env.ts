@@ -57,7 +57,7 @@ export const env = {
     brandTagline: str('NEXT_PUBLIC_DEFAULT_BRAND_TAGLINE', 'Pure food, thoughtfully made.'),
     brandLogo: str('NEXT_PUBLIC_DEFAULT_BRAND_LOGO', '/assets/images/logo.png'),
     storeEmail: str('NEXT_PUBLIC_DEFAULT_STORE_EMAIL', 'info@gawdee.com'),
-    whatsappNumber: str('NEXT_PUBLIC_DEFAULT_WHATSAPP_NUMBER', '917055207030'),
+    whatsappNumber: str('NEXT_PUBLIC_DEFAULT_WHATSAPP_NUMBER', '918891066980'),
     headerShopLabel: str('NEXT_PUBLIC_DEFAULT_HEADER_SHOP_LABEL', 'Shop Now'),
     aiChatEnabled: str('NEXT_PUBLIC_DEFAULT_AI_CHAT_ENABLED', '1'),
     siteShowWhatsapp: str('NEXT_PUBLIC_DEFAULT_SITE_SHOW_WHATSAPP', '1'),

@@ -8,6 +8,8 @@ import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
 import { money, resolveImageUrl } from '@/lib/utils';
 import { env } from '@/config/env';
+import { LoyaltyRedemptionQuote, LoyaltyWallet } from '@/types';
+import { formatCoins, formatPaise } from '@/lib/loyalty';
 import Script from 'next/script';
 
 declare global {
@@ -37,6 +39,11 @@ export default function CheckoutPage() {
   const [appliedCoupon, setAppliedCoupon] = useState('');
   const [discountPercent, setDiscountPercent] = useState(0);
   const [couponError, setCouponError] = useState('');
+  const [loyaltyWalletResult, setLoyaltyWalletResult] = useState<{ customerId: number; wallet: LoyaltyWallet } | null>(null);
+  const [loyaltyInput, setLoyaltyInput] = useState('');
+  const [loyaltyQuote, setLoyaltyQuote] = useState<{ key: string; quote: LoyaltyRedemptionQuote } | null>(null);
+  const [loyaltyBusy, setLoyaltyBusy] = useState(false);
+  const [loyaltyError, setLoyaltyError] = useState('');
 
   // Store-backed checkout settings (preview only — the server is the source of truth)
   const [freeShippingThreshold, setFreeShippingThreshold] = useState(env.defaultShippingThreshold);
@@ -71,12 +78,17 @@ export default function CheckoutPage() {
           const pct = Number(res.settings.offer_percent);
           if (Number.isFinite(pct) && pct > 0) setActiveOfferPercent(pct);
         }
+        if (res.razorpay_enabled === false) {
+          setRazorpayAvailable(false);
+          setPaymentMethod('cod');
+        }
       })
       .catch(() => {});
   }, []);
 
   // Payment method
   const [paymentMethod, setPaymentMethod] = useState<'razorpay' | 'cod'>('razorpay');
+  const [razorpayAvailable, setRazorpayAvailable] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -94,9 +106,59 @@ export default function CheckoutPage() {
     }
   }, [customer]);
 
+  const customerId = customer?.id;
+  const loyaltyWallet = loyaltyWalletResult && loyaltyWalletResult.customerId === customerId ? loyaltyWalletResult.wallet : null;
+
+  useEffect(() => {
+    if (!customerId) return;
+    let cancelled = false;
+    api.loyalty.getWallet()
+      .then((res) => { if (!cancelled && res.ok) setLoyaltyWalletResult({ customerId, wallet: res.wallet }); })
+      .catch(() => { if (!cancelled) setLoyaltyError('Unable to load your loyalty balance.'); });
+    return () => { cancelled = true; };
+  }, [customerId]);
+
   const shippingFee = subtotal >= freeShippingThreshold || subtotal === 0 ? 0 : shippingFeeValue;
   const discountAmount = appliedCoupon ? Math.round((subtotal * discountPercent) / 100) : 0;
   const grandTotal = Math.max(0, subtotal - discountAmount + shippingFee);
+  const loyaltyContextKey = JSON.stringify({
+    customerId: customer?.id ?? null,
+    items: items.map((item) => [item.id, item.quantity]),
+    coupon: appliedCoupon,
+    requestedCoins: loyaltyInput,
+  });
+  const appliedLoyaltyQuote = loyaltyQuote?.key === loyaltyContextKey ? loyaltyQuote.quote : null;
+
+  const handleApplyLoyalty = async () => {
+    setLoyaltyError('');
+    const requested = Number(loyaltyInput);
+    if (!Number.isSafeInteger(requested) || requested <= 0 || !/^\d+$/.test(loyaltyInput.trim())) {
+      setLoyaltyError('Enter a positive whole number of coins.');
+      return;
+    }
+    if (loyaltyWallet && requested > loyaltyWallet.available_coins) {
+      setLoyaltyError(`You have ${formatCoins(loyaltyWallet.available_coins)} coins available.`);
+      return;
+    }
+    setLoyaltyBusy(true);
+    const requestedForKey = loyaltyContextKey;
+    try {
+      const quote = await api.loyalty.calculateRedemption({
+        items: items.map((item) => ({ id: item.id, quantity: item.quantity })),
+        coupon_code: appliedCoupon,
+        requested_coins: requested,
+      });
+      if (!quote.ok || !Number.isSafeInteger(quote.discount_paise) || quote.discount_paise <= 0) {
+        throw new Error('These coins cannot be used on this order.');
+      }
+      setLoyaltyQuote({ key: requestedForKey, quote });
+    } catch (err) {
+      setLoyaltyQuote(null);
+      setLoyaltyError(err instanceof Error ? err.message : 'Could not calculate the loyalty discount.');
+    } finally {
+      setLoyaltyBusy(false);
+    }
+  };
 
   const handleApplyCoupon = () => {
     setCouponError('');
@@ -135,6 +197,7 @@ export default function CheckoutPage() {
           notes: notes.trim(),
         },
         coupon_code: appliedCoupon,
+        loyalty_coins: appliedLoyaltyQuote?.discount_paise ?? 0,
         payment_method: paymentMethod,
         checkout_token: checkoutToken,
         items: items.map((i) => ({ id: i.id, quantity: i.quantity })),
@@ -173,7 +236,7 @@ export default function CheckoutPage() {
         const options = {
           key: rpKeyId,
           amount: (res.razorpay?.amount || res.total * 100),
-          currency: 'INR',
+          currency: res.razorpay?.currency || 'INR',
           name: res.razorpay?.name || 'Gawdee',
           description: res.razorpay?.description || `Order ${res.order_number}`,
           order_id: rpOrderId,
@@ -199,9 +262,11 @@ export default function CheckoutPage() {
                 router.push(`/order-success?order=${res.order_number}`);
               } else {
                 setErrorMsg('Payment verification failed. Please contact support.');
+                setSubmitting(false);
               }
             } catch (err: any) {
               setErrorMsg(err.message || 'Payment verification error.');
+              setSubmitting(false);
             }
           },
           modal: {
@@ -226,7 +291,7 @@ export default function CheckoutPage() {
 
   return (
     <>
-      <Script src={env.razorpayCheckoutUrl} strategy="lazyOnload" />
+      <Script src={env.razorpayCheckoutUrl} strategy="afterInteractive" />
 
       <section className="checkout-shell" style={{ padding: '3rem 0 6rem' }}>
         <div className="container">
@@ -437,6 +502,53 @@ export default function CheckoutPage() {
                   )}
                 </div>
 
+                {customer ? (
+                  <div style={{ marginBottom: '1.5rem', background: '#f4faf8', padding: '1rem', borderRadius: '12px', border: '1px solid #d9ede7' }}>
+                    <strong style={{ display: 'block', marginBottom: '0.3rem' }}>Use Loyalty Coins</strong>
+                    <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: '#555' }}>
+                      Available: {loyaltyWallet ? formatCoins(loyaltyWallet.available_coins) : 'Loading…'} coins
+                      {loyaltyWallet && ` (${formatPaise(loyaltyWallet.equivalent_paise)})`}. 1 coin = ₹0.01.
+                    </p>
+                    <label htmlFor="loyalty-coins" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.4rem' }}>
+                      Coins to redeem
+                    </label>
+                    <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+                      <input
+                        id="loyalty-coins"
+                        type="number"
+                        inputMode="numeric"
+                        min="1"
+                        step="1"
+                        value={loyaltyInput}
+                        onChange={(event) => { setLoyaltyInput(event.target.value); setLoyaltyQuote(null); setLoyaltyError(''); }}
+                        placeholder="Enter whole coins"
+                        style={{ flex: '1 1 150px', padding: '0.5rem 0.8rem', border: '1px solid #ccc', borderRadius: '8px' }}
+                      />
+                      <button type="button" onClick={handleApplyLoyalty} disabled={loyaltyBusy || !loyaltyWallet || items.length === 0} className="button button--secondary" style={{ minHeight: '38px', padding: '0 1rem' }}>
+                        {loyaltyBusy ? 'Checking…' : 'Apply Coins'}
+                      </button>
+                      {appliedLoyaltyQuote && (
+                        <button type="button" onClick={() => { setLoyaltyQuote(null); setLoyaltyInput(''); }} className="button button--secondary" style={{ minHeight: '38px', padding: '0 1rem' }}>
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                    {appliedLoyaltyQuote && (
+                      <small style={{ display: 'block', marginTop: '0.5rem', color: '#007a69' }}>
+                        {formatCoins(appliedLoyaltyQuote.discount_paise)} coins applied for a {formatPaise(appliedLoyaltyQuote.discount_paise)} discount.
+                        {' '}Maximum for this order: {formatCoins(appliedLoyaltyQuote.max_redeemable_coins)} coins.
+                      </small>
+                    )}
+                    {!appliedLoyaltyQuote && loyaltyQuote && <small style={{ display: 'block', marginTop: '0.5rem', color: '#866600' }}>Your bag or coupon changed. Apply coins again for a new quote.</small>}
+                    {loyaltyError && <small role="alert" style={{ display: 'block', marginTop: '0.5rem', color: '#c62828' }}>{loyaltyError}</small>}
+                    <small style={{ display: 'block', marginTop: '0.5rem', color: '#666' }}>The final discount and available balance are checked again when you place the order.</small>
+                  </div>
+                ) : (
+                  <p style={{ fontSize: '0.85rem', color: '#666', marginBottom: '1.5rem' }}>
+                    <Link href="/login?return=/checkout" style={{ color: '#009a84', fontWeight: 600 }}>Sign in</Link> to use Loyalty Coins on this order.
+                  </p>
+                )}
+
                 {/* Payment method selector */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   <label
@@ -456,12 +568,13 @@ export default function CheckoutPage() {
                       name="payment_method"
                       value="razorpay"
                       checked={paymentMethod === 'razorpay'}
+                      disabled={!razorpayAvailable}
                       onChange={() => setPaymentMethod('razorpay')}
                     />
                     <i className="ph ph-credit-card" style={{ fontSize: '1.6rem', color: '#009a84' }}></i>
                     <div>
                       <strong style={{ display: 'block' }}>Razorpay Online Payment</strong>
-                      <small style={{ color: '#666' }}>UPI (GPay, PhonePe, Paytm), Credit/Debit Cards, Netbanking</small>
+                      <small style={{ color: '#666' }}>{razorpayAvailable ? 'UPI (GPay, PhonePe, Paytm), Credit/Debit Cards, Netbanking' : 'Online payment is not configured yet'}</small>
                     </div>
                   </label>
 
@@ -501,7 +614,7 @@ export default function CheckoutPage() {
 
               <button
                 type="submit"
-                disabled={submitting || items.length === 0}
+                disabled={submitting || loyaltyBusy || items.length === 0}
                 className="button button--primary"
                 style={{ padding: '1rem', fontSize: '1.1rem', width: '100%', justifyContent: 'center' }}
               >
@@ -511,7 +624,7 @@ export default function CheckoutPage() {
                   </>
                 ) : (
                   <>
-                    <span>Place Order • {money(grandTotal)}</span>
+                    <span>{appliedLoyaltyQuote ? 'Place Order • total confirmed by server' : `Place Order • ${money(grandTotal)}`}</span>
                     <i className="ph ph-lock-key"></i>
                   </>
                 )}
@@ -568,10 +681,19 @@ export default function CheckoutPage() {
                   <strong>{shippingFee === 0 ? <span style={{ color: '#009a84' }}>FREE</span> : money(shippingFee)}</strong>
                 </div>
 
+                {appliedLoyaltyQuote && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#009a84' }}>
+                    <span>Loyalty Discount ({formatCoins(appliedLoyaltyQuote.discount_paise)} coins)</span>
+                    <strong>−{formatPaise(appliedLoyaltyQuote.discount_paise)}</strong>
+                  </div>
+                )}
+
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.2rem', fontWeight: 800, color: '#111', paddingTop: '0.8rem', borderTop: '1px dashed #ddd', marginTop: '0.4rem' }}>
-                  <span>Grand Total</span>
+                  <span>{appliedLoyaltyQuote ? 'Total before loyalty' : 'Grand Total'}</span>
                   <span style={{ color: '#009a84' }}>{money(grandTotal)}</span>
                 </div>
+
+                {appliedLoyaltyQuote && <small style={{ color: '#666' }}>Final payable amount is recalculated by the server when you place your order.</small>}
 
                 <small style={{ color: '#888', marginTop: '0.4rem' }}>
                   {subtotal >= freeShippingThreshold
