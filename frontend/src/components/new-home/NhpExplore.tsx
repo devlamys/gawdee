@@ -71,16 +71,12 @@ function NhpProductCard({ item }: { item: CatalogItem }) {
   return (
     <article className="nhp-card" data-category={item.categoryKey || item.category?.toLowerCase()}>
       <Link className="nhp-card__media" href={`/products/${item.slug}`} aria-label={item.name}>
-        <div className="nhp-card__badges">
-          {badgeText && (
-            <span className={`nhp-card__badge ${badgeText.includes('OFF') || badgeText === 'Bulk Family Savings' && item.id === 4 ? 'nhp-card__badge--green' : 'nhp-card__badge--yellow'}`}>
-              {badgeText}
-            </span>
-          )}
-          {item.id === 1 && discount > 0 && (
-            <span className="nhp-card__badge nhp-card__badge--green">{discount}% OFF</span>
-          )}
-        </div>
+        {badgeText && (badgeText.includes('OFF') || (badgeText === 'Bulk Family Savings' && item.id === 4)) && (
+          <span className="nhp-combo__save">{badgeText}</span>
+        )}
+        {item.id === 1 && discount > 0 && (
+          <span className="nhp-combo__save">{discount}% OFF</span>
+        )}
         <button type="button" className="nhp-card__wishlist" aria-label="Add to wishlist">
           <i className="ph ph-heart"></i>
         </button>
@@ -112,6 +108,9 @@ function NhpProductCard({ item }: { item: CatalogItem }) {
           )}
         </div>
 
+        {badgeText && !(badgeText.includes('OFF') || (badgeText === 'Bulk Family Savings' && item.id === 4)) && (
+          <p className="nhp-combo__category">{badgeText}</p>
+        )}
         <h3 className="nhp-card__title">
           <Link href={`/products/${item.slug}`}>{item.name}</Link>
         </h3>
@@ -199,11 +198,9 @@ function NhpExploreComboCard({ combo }: { combo: Combo }) {
   return (
     <article className="nhp-card" data-category="combos">
       <Link className="nhp-card__media" href={href} aria-label={combo.title}>
-        <div className="nhp-card__badges">
-          {savePercent > 0 && (
-            <span className="nhp-card__badge nhp-card__badge--green">{savePercent}% OFF</span>
-          )}
-        </div>
+        {savePercent > 0 && (
+          <span className="nhp-combo__save">{savePercent}% OFF</span>
+        )}
         {image ? (
           <img src={resolveImageUrl(image)} alt={combo.alt || combo.title} loading="lazy" />
         ) : (

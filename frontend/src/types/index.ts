@@ -87,6 +87,8 @@ export interface CatalogVariant {
   isActive: number;
   images?: CatalogVariantImage[];
   imageCount?: number;
+  /** First two gallery images (admin order) for listing hover-swap. */
+  imagePreview?: string[];
 }
 
 export interface CatalogItem {

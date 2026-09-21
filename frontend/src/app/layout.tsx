@@ -59,7 +59,7 @@ export default async function RootLayout({
         <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css" />
         <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css" />
       </head>
-      <body className="commerce-home">
+      <body className="commerce-home" suppressHydrationWarning>
         <a className="skip-link" href="#main-content">
           Skip to content
         </a>

@@ -128,39 +128,7 @@ export const AiChatDrawer: React.FC = () => {
           </button>
         </header>
 
-        {/* Latest offer card (backend-configured offer) */}
-        {offerCode && (
-          <article className="ai-offer-card" aria-label="Latest offer">
-            <Link className="ai-offer-card__media" href="/offers" aria-label="View offer">
-              <img
-                src="/assets/images/hero-slide-independence-v5.webp"
-                alt="Special offer"
-                loading="lazy"
-              />
-              <span>
-                <i className="ph ph-sparkle"></i> Special offer
-              </span>
-            </Link>
-            <div className="ai-offer-card__body">
-              <div>
-                <small>Special offer</small>
-                <strong>
-                  {offerPercent ? `Flat ${offerPercent}% OFF` : 'Special savings'} <em>on all products</em>
-                </strong>
-              </div>
-              <button
-                type="button"
-                onClick={() => handleCopyOffer(offerCode)}
-                aria-label={`Copy offer code ${offerCode}`}
-              >
-                <strong>{offerCode}</strong>
-                <span>
-                  <i className={`ph ${copied ? 'ph-check' : 'ph-copy'}`}></i> {copied ? 'Copied' : 'Copy'}
-                </span>
-              </button>
-            </div>
-          </article>
-        )}
+
 
         {/* Message history */}
         <div className="ai-chat__messages" data-ai-messages>

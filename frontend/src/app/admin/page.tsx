@@ -3494,18 +3494,20 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                         variants: [
                           ...(modalData.variants || []),
                           {
-                            variant_name: defaultName,
+                            variantName: defaultName,
                             sku: '',
-                            stock_quantity: 0,
+                            stock: 0,
                             mrp: 0,
+                            sellingPrice: 0,
                             discount: 0,
-                            selling_price: 0,
-                            is_inclusive_tax: true,
+                            uom: '',
+                            isInclusive: true,
                             // Mirrors DB DEFAULT 1 for new variants; persisted rows load real values.
                             isLabTested: true,
                             isNatural: true,
-                            is_active: true,
+                            isActive: true,
                             image: '',
+                            images: [],
                           },
                         ],
                       });

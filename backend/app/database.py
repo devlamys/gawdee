@@ -1879,6 +1879,12 @@ async def update_variant(db: aiosqlite.Connection, variant_id: int, fields: dict
     elif not raw_has_price and raw_has_discount:
         merged.pop("selling_price", None)
         merged.pop("price", None)
+    # Frontend canonical keys win over same-row legacy aliases: without this,
+    # stock / tax edits are silently shadowed by the stored values.
+    if "stock_quantity" in fields:
+        merged.pop("stock", None)
+    if "is_inclusive_tax" in fields:
+        merged.pop("is_inclusive", None)
     clean = await validate_variant_fields(db, merged, item_id, variant_id)
     await db.execute(
         "UPDATE variant SET item_id=?, variant_name=?, slug=?, sku=?, stock=?, mrp=?, discount=?, selling_price=?, "
@@ -2321,6 +2327,18 @@ def to_variant_dto(variant: dict, images: Optional[list[dict]] = None, include_i
     # Round (not truncate) so badges match the legacy surface: 16.95 → 17.
     display_percent = int(round(precise_discount)) if mrp > selling else 0
     display_percent = min(100, max(0, display_percent))
+    # Bounded gallery preview for listing cards: first two active images in
+    # admin order. List surfaces omit full galleries (imageCount only) but
+    # cards need a hover-swap second image without extra requests.
+    preview: list[str] = []
+    for g in imgs:
+        if not isinstance(g, dict):
+            continue
+        url = str(g.get("image_url", g.get("image", "")) or "").strip()
+        if url and url not in preview:
+            preview.append(url)
+        if len(preview) >= 2:
+            break
     dto = {
         "id": int(v.get("id", 0)),
         "itemId": int(v.get("item_id", 0)),
@@ -2338,6 +2356,7 @@ def to_variant_dto(variant: dict, images: Optional[list[dict]] = None, include_i
         "isLabTested": bool(int(v.get("is_lab_tested", 1))),
         "isNatural": bool(int(v.get("is_natural", 1))),
         "image": str(v.get("image") or ""),
+        "imagePreview": preview,
         "isActive": int(v.get("is_active", 1)),
         "createdAt": str(v.get("created_at") or ""),
         "updatedAt": str(v.get("updated_at") or ""),

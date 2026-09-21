@@ -66,9 +66,16 @@ function NhpComboCard({ combo }: { combo: Combo }) {
         </h3>
         {combo.details || combo.description ? (
           <p className="nhp-combo__desc">
-            {(combo.details || combo.description || '').length > 434
-              ? (combo.details || combo.description || '').substring(0, 434) + '...'
-              : (combo.details || combo.description)}
+            <span className="nhp-combo__desc--desktop">
+              {(combo.details || combo.description || '').length > 434
+                ? (combo.details || combo.description || '').substring(0, 434) + '...'
+                : (combo.details || combo.description)}
+            </span>
+            <span className="nhp-combo__desc--mobile">
+              {(combo.details || combo.description || '').length > 205
+                ? (combo.details || combo.description || '').substring(0, 205) + '...'
+                : (combo.details || combo.description)}
+            </span>
           </p>
         ) : null}
 
@@ -128,9 +135,16 @@ function NhpComboItemCard({ item }: { item: CatalogItem }) {
         </h3>
         {item.description && (
           <p className="nhp-combo__desc">
-            {item.description.length > 434
-              ? item.description.substring(0, 434) + '...'
-              : item.description}
+            <span className="nhp-combo__desc--desktop">
+              {item.description.length > 434
+                ? item.description.substring(0, 434) + '...'
+                : item.description}
+            </span>
+            <span className="nhp-combo__desc--mobile">
+              {item.description.length > 205
+                ? item.description.substring(0, 205) + '...'
+                : item.description}
+            </span>
           </p>
         )}
 
