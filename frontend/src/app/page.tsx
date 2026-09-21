@@ -184,99 +184,13 @@ export default async function HomePage() {
       <NhpCombos />
 
 
-<<<<<<< HEAD
+
       {offers.length > 0 && <OfferCards offers={offers} />}
 
-      {/* 4. Organic Categories Grid */}
-      <section className="commerce-section category-section" id="categories">
-        <div className="container">
-          <div className="commerce-section__heading reveal">
-            <div>
-              <span className="eyebrow">
-                <i className="ph ph-squares-four"></i> Browse the pantry
-              </span>
-              <h2>Shop by category</h2>
-              <p>Find the right products for your daily rituals.</p>
-            </div>
-          </div>
-          <div className="category-grid">
-            <Link
-              className="category-card reveal"
-              data-delay={0}
-              href="/products"
-            >
-              <span className="category-card__visual">
-                <img src="/assets/icons/categories/all-products.webp" alt="All Products" width={64} height={64} loading="lazy" />
-              </span>
-              <strong>All Products</strong>
-              <span className="category-card__arrow">
-                <i className="ph ph-arrow-right"></i>
-              </span>
-            </Link>
-            {categories.map((cat, index) => {
-              const filter = (cat.filter || '').toLowerCase();
-              const artwork = (cat.imageUrl && resolveImageUrl(cat.imageUrl)) || CATEGORY_ARTWORK[filter] || '/assets/icons/categories/all-products.webp';
-              return (
-                <Link
-                  key={cat.id}
-                  className="category-card reveal"
-                  data-delay={(index + 1) * 35}
-                  href={`/products${filter ? `?category=${filter}` : ''}`}
-                >
-                  <span className="category-card__visual">
-                    <img src={artwork} alt={cat.name} width={64} height={64} loading="lazy" />
-                  </span>
-                  <strong>{cat.name}</strong>
-                  <span className="category-card__arrow">
-                    <i className="ph ph-arrow-right"></i>
-                  </span>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-=======
->>>>>>> eeee777fbebaf097c69a45398f92c2a3f41456c3
 
-      {/* 5. Campaign Special Offer Banner (real offer configured in backend settings) */}
-      {offerCode && (
-        <section className="commerce-section campaign-offer-section" id="offers">
-          <div className="container">
-            <div className="commerce-section__heading reveal">
-              <div>
-                <span className="eyebrow">
-                  <i className="ph ph-tag"></i> Special offer
-                </span>
-                <h2>Flat {offerPercent ? `${offerPercent}% OFF` : 'special savings'}</h2>
-                <p>On all products. Use code {offerCode} at checkout.</p>
-              </div>
-              <div className="commerce-section__actions">
-                <Link className="button button--primary" href="#shop">
-                  Shop offer <i className="ph ph-arrow-right"></i>
-                </Link>
-              </div>
-            </div>
-            <Link
-              className="independence-image-offer reveal reveal--scale"
-              href="#shop"
-              aria-label={`Flat ${offerPercent ? `${offerPercent}% OFF` : 'special savings'}. On all products. Use code ${offerCode} at checkout.`}
-            >
-              <picture>
-                <source
-                  media="(max-width: 700px)"
-                  srcSet="/assets/images/independence-day-offer-banner-mobile-v1.png"
-                />
-                <img
-                  src="/assets/images/independence-day-offer-banner-v1.png"
-                  alt={`Flat ${offerPercent ? `${offerPercent}% OFF` : 'special savings'}. On all products. Use code ${offerCode} at checkout.`}
-                  loading="lazy"
-                />
-              </picture>
-            </Link>
-          </div>
-        </section>
-      )}
+
+
+
 
 
 

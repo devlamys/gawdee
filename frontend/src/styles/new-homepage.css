@@ -1576,6 +1576,7 @@
   font-size: 0.9rem;
   line-height: 1.5;
   color: #7a8a80;
+  text-align: justify;
 }
 
 .nhp-combo__footer {
@@ -1596,6 +1597,7 @@
   display: flex;
   align-items: baseline;
   gap: 8px;
+  font-family: 'Figtree', sans-serif;
 }
 
 .nhp-combo__price strong {
@@ -1607,6 +1609,16 @@
 .nhp-combo__price s {
   font-size: 1.05rem;
   color: #b9c6bd;
+}
+
+.nhp-combo__noimage {
+  width: 100%;
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  background: #f1efe7;
+  color: #b9c6bd;
+  font-size: 2rem;
 }
 .nhp-combo__add {
   display: inline-flex;

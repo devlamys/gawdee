@@ -59,13 +59,14 @@ function CatalogProductCardItem({
 
   return (
     <article
-      className="product-card catalog-product-card reveal is-visible"
+      className="product-card catalog-product-card nhp-combo reveal is-visible"
+      style={{ width: '100%', flex: 'none', scrollSnapAlign: 'none', minWidth: 'auto', margin: 0 }}
       data-delay={(index % 4) * 40}
       data-category={item.categoryKey || item.category?.toLowerCase()}
       data-search-name={searchKeywords}
     >
       <Link
-        className="product-card__media"
+        className="nhp-combo__media"
         href={`/products/${item.slug}`}
         style={{ '--product-accent': item.accent || '#d8a934' } as React.CSSProperties}
         onMouseEnter={() => setHovered(true)}
@@ -83,21 +84,23 @@ function CatalogProductCardItem({
           loading="lazy"
         />
       </Link>
-      <div className="product-card__body">
-        <div className="product-card__meta">
-          <span>{item.category}</span>
-          <span>·</span>
-          <span>{selected?.variantName || ''}</span>
-        </div>
-        <h3>
+      <div className="nhp-combo__body">
+        <p className="nhp-combo__category">
+          {item.category} {selected?.variantName ? `· ${selected.variantName}` : ''}
+        </p>
+        <h3 className="nhp-combo__title">
           <Link href={`/products/${item.slug}`}>
             {item.name}
           </Link>
         </h3>
         {item.description && (
-          <p className="catalog-product-card__copy">{item.description}</p>
+          <p className="nhp-combo__desc">
+            {item.description.length > 434
+              ? item.description.substring(0, 434) + '...'
+              : item.description}
+          </p>
         )}
-        <div className="catalog-product-card__rating">
+        <div className="catalog-product-card__rating" style={{ marginBottom: '12px' }}>
           <span className="stars" aria-hidden="true">★★★★★</span>
           {Number(item.rating) > 0 ? (
             <>
@@ -112,7 +115,7 @@ function CatalogProductCardItem({
           )}
         </div>
         {isMultiVariant && (
-          <div className="card-variant-pills" aria-label="Select pack size">
+          <div className="card-variant-pills" aria-label="Select pack size" style={{ marginBottom: '12px' }}>
             {variants.map((cv: CatalogVariant) => {
               const isCur = selected != null && cv.id === selected.id;
               const cvAvailable = isVariantAvailable(cv);
@@ -131,27 +134,29 @@ function CatalogProductCardItem({
             })}
           </div>
         )}
-        <div className="product-card__buy">
-          <div className="product-card__price">
-            {selected ? (
-              <>
-                <strong>{money(selected.sellingPrice)}</strong>
-                {selected.mrp > selected.sellingPrice && (
-                  <s>{money(selected.mrp)}</s>
-                )}
-              </>
-            ) : (
-              <strong style={{ color: '#999', fontSize: '0.9rem' }}>Unavailable</strong>
-            )}
+        <div className="nhp-combo__footer">
+          <div className="nhp-combo__meta">
+            <div className="nhp-combo__price">
+              {selected ? (
+                <>
+                  <strong>{money(selected.sellingPrice)}</strong>
+                  {selected.mrp > selected.sellingPrice && (
+                    <s>{money(selected.mrp)}</s>
+                  )}
+                </>
+              ) : (
+                <strong style={{ color: '#999', fontSize: '0.9rem' }}>Unavailable</strong>
+              )}
+            </div>
           </div>
           <button
-            className="add-button"
+            className="nhp-combo__add"
             type="button"
             onClick={handleAdd}
             disabled={!available}
             aria-label={selected ? `Add ${item.name} ${selected.variantName} to cart` : `Add ${item.name} to cart`}
           >
-            <span>{!available ? 'Out of stock' : 'Add to cart'}</span>
+            <i className="ph ph-shopping-cart-simple" aria-hidden="true"></i> {!available ? 'Out of stock' : 'ADD'}
           </button>
         </div>
       </div>

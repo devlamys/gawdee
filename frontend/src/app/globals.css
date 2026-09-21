@@ -13,3 +13,28 @@ a {
   text-decoration: none;
   color: inherit;
 }
+
+/* AI Assistant floating orb image override */
+@keyframes pulseOrb {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+.ai-float__orb {
+  border: none !important;
+  width: 56px !important;
+  height: 56px !important;
+  animation: pulseOrb 2s ease-in-out infinite;
+}
+@media (max-width: 640px) {
+  .ai-float__orb {
+    width: 48px !important;
+    height: 48px !important;
+  }
+}
+.ai-float__orb img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}

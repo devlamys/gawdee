@@ -27,6 +27,8 @@ from .database import (
     deduct_variant_stock,
     restore_variant_stock,
     sync_variant_mirror,
+    resolve_combo_product,
+    combo_available_stock,
 )
 from .core.config import settings
 
@@ -72,6 +74,10 @@ async def checkout_pricing(db: aiosqlite.Connection, requested_items: list[dict]
                 item = await get_item_by_id(db, var["item_id"])
                 if item:
                     product = map_variant_row(item, var)
+        if not product and prod_id.startswith("combo-"):
+            # Curated bundle (`combos` table): charged at its own combo price,
+            # stock gated by the scarcest backing product.
+            product = await resolve_combo_product(db, prod_id)
         quantity = min(settings.CHECKOUT_MAX_QTY, max(1, int(req.get("quantity") or req.get("qty") or 1)))
         if not product:
             raise ValueError("A product in the cart is no longer available.")
@@ -164,7 +170,9 @@ async def create_local_order(
             req_qty = line["quantity"]
             identity = resolve_variant_identity(prod)
             avail = None
-            if identity.get("variant_id"):
+            if prod.get("combo_id"):
+                avail = await combo_available_stock(db, int(prod["combo_id"]))
+            elif identity.get("variant_id"):
                 avail = await get_variant_stock(db, identity["variant_id"])
             if avail is None:
                 async with db.execute("SELECT stock FROM products WHERE id = ?", (prod["id"],)) as cur:
@@ -203,7 +211,32 @@ async def create_local_order(
                 (order_id, product["id"], product["full_name"], quantity, product["price"], product.get("image", "")),
             )
             identity = resolve_variant_identity(product)
-            if identity.get("variant_id"):
+            if product.get("combo_id"):
+                # Bundle line: reserve one unit of each backing product.
+                for ref in product.get("bundle_refs", []):
+                    bundle_var = await get_variant_by_ref(db, ref, True)
+                    if bundle_var:
+                        deducted = await deduct_variant_stock(db, bundle_var["id"], quantity)
+                        if not deducted:
+                            raise ValueError(f"{product['name']} sold out while checkout was being prepared.")
+                        balance = await get_variant_stock(db, bundle_var["id"]) or 0
+                        inv_ref = bundle_var.get("legacy_product_id") or str(bundle_var["id"])
+                        await record_inventory_event(db, str(inv_ref), -quantity, balance, f"Bundle part for order {order_number}", order_id)
+                    else:
+                        deduct_cur = await db.execute(
+                            """UPDATE products SET stock = stock - ?,
+                               stock_status = CASE WHEN stock - ? <= 0 THEN 'out_of_stock' ELSE 'in_stock' END
+                               WHERE id = ? AND stock >= ?""",
+                            (quantity, quantity, ref, quantity),
+                        )
+                        if deduct_cur.rowcount != 1:
+                            raise ValueError(f"{product['name']} sold out while checkout was being prepared.")
+                        async with db.execute("SELECT stock FROM products WHERE id = ?", (ref,)) as cur:
+                            stock_row = await cur.fetchone()
+                        if not stock_row:
+                            raise ValueError(f"{product['name']} sold out while checkout was being prepared.")
+                        await record_inventory_event(db, ref, -quantity, int(stock_row["stock"]), f"Bundle part for order {order_number}", order_id)
+            elif identity.get("variant_id"):
                 deducted = await deduct_variant_stock(db, identity["variant_id"], quantity)
                 if not deducted:
                     raise ValueError(f"{product['name']} sold out while checkout was being prepared.")
@@ -324,6 +357,34 @@ async def release_order_inventory(db: aiosqlite.Connection, order_id: int, new_i
     for item in items:
         pid = str(item["product_id"])
         qty = int(item["quantity"])
+        if pid.startswith("combo-"):
+            # Bundle line: release one unit of each backing product.
+            # The combo itself may be inactive by now, so read its refs directly.
+            async with db.execute("SELECT product_one_ref, product_two_ref FROM combos WHERE slug = ? LIMIT 1", (pid[len("combo-"):],)) as cur:
+                combo_row = await cur.fetchone()
+            if combo_row:
+                for ref in (str(combo_row["product_one_ref"] or ""), str(combo_row["product_two_ref"] or "")):
+                    if not ref:
+                        continue
+                    bundle_var = await get_variant_by_ref(db, ref, True)
+                    if bundle_var:
+                        await restore_variant_stock(db, bundle_var["id"], qty)
+                        bal = await get_variant_stock(db, bundle_var["id"]) or 0
+                        inv_ref = bundle_var.get("legacy_product_id") or str(bundle_var["id"])
+                        await record_inventory_event(db, str(inv_ref), qty, bal, "Restocked from cancelled or failed order", order_id)
+                    else:
+                        await db.execute(
+                            "UPDATE products SET stock = stock + ?, stock_status='in_stock' WHERE id = ?",
+                            (qty, ref),
+                        )
+                        async with db.execute("SELECT stock FROM products WHERE id = ?", (ref,)) as cur:
+                            stock_r = await cur.fetchone()
+                            balance = int(stock_r["stock"]) if stock_r else 0
+                        await record_inventory_event(
+                            db, ref, qty, balance,
+                            "Restocked from cancelled or failed order", order_id,
+                        )
+            continue
         variant = await get_variant_by_ref(db, pid, True)
         if variant:
             await restore_variant_stock(db, variant["id"], qty)

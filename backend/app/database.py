@@ -250,6 +250,24 @@ CREATE TABLE IF NOT EXISTS offers (
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS combos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    image TEXT NOT NULL DEFAULT '',
+    product_one_ref TEXT NOT NULL DEFAULT '',
+    product_two_ref TEXT NOT NULL DEFAULT '',
+    selling_price INTEGER NOT NULL DEFAULT 0,
+    mrp INTEGER NOT NULL DEFAULT 0,
+    discount REAL NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS category (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -584,8 +602,8 @@ CREATE_INDEXES_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_variants_sku ON variant(sku)",
     "CREATE INDEX IF NOT EXISTS idx_variants_legacy ON variant(legacy_product_id)",
     "CREATE INDEX IF NOT EXISTS idx_images_variant ON variant_image(variant_id, is_active, sort_order, id)",
+    "CREATE INDEX IF NOT EXISTS idx_combos_active ON combos(is_active, sort_order, id)",
 ]
-
 DEFAULT_SETTINGS = {
     "store_name": "Gawdee",
     "store_email": "info@gawdee.com",
@@ -808,6 +826,19 @@ DOMAIN_SCHEMA_VERSION_V4 = 4
 DOMAIN_SCHEMA_VERSION_V5 = 5
 
 
+async def migrate_combos_v6(db: aiosqlite.Connection) -> None:
+    """Drop the retired combos.tagline column. Idempotent: early-returns via
+    PRAGMA user_version and checks the column before acting."""
+    async with db.execute("PRAGMA user_version") as cur:
+        row = await cur.fetchone()
+    if row and int(row[0]) >= 6:
+        return
+    if await _table_exists(db, "combos") and await _column_exists(db, "combos", "tagline"):
+        await db.execute("ALTER TABLE combos DROP COLUMN tagline")
+    await db.execute("PRAGMA user_version = 6")
+    await db.commit()
+
+
 async def migrate_domain_v4(db: aiosqlite.Connection) -> None:
     """Parent-category migration: the parent concept moves from Item (self
     reference) to Category (self reference).
@@ -919,9 +950,9 @@ async def migrate(db: aiosqlite.Connection) -> None:
     await migrate_domain_v2(db)
     await migrate_domain_v3(db)
     await migrate_domain_v4(db)
-    await migrate_domain_v5(db)
     await db.executescript(CREATE_TABLES_SQL)
     await migrate_product_reviews_v5(db)
+    await migrate_combos_v6(db)
     for sql in CREATE_INDEXES_SQL:
         await db.execute(sql)
     await db.execute("PRAGMA optimize")
@@ -1851,7 +1882,7 @@ async def update_variant(db: aiosqlite.Connection, variant_id: int, fields: dict
     clean = await validate_variant_fields(db, merged, item_id, variant_id)
     await db.execute(
         "UPDATE variant SET item_id=?, variant_name=?, slug=?, sku=?, stock=?, mrp=?, discount=?, selling_price=?, "
-        "is_inclusive=?, is_lab_tested=?, is_natural=?, uom=?, image=?, is_active=?, rich_image_sections=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        "is_inclusive=?, is_lab_tested=?, is_natural=?, uom=?, image=?, is_active=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
         (item_id, clean["variant_name"], clean["slug"], clean["sku"], clean["stock"], clean["mrp"],
          clean["discount"], clean["selling_price"], clean["is_inclusive"], clean["is_lab_tested"], clean["is_natural"], clean["uom"], clean["image"], clean["is_active"], variant_id),
     )
@@ -2104,7 +2135,7 @@ async def update_variant_image(db: aiosqlite.Connection, image_id: int, fields: 
     }
     clean = validate_variant_image_fields(merged)
     await db.execute(
-        "UPDATE variant_image SET name=?, image_url=?, sort_order=?, is_active=?, rich_image_sections=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        "UPDATE variant_image SET name=?, image_url=?, sort_order=?, is_active=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
         (clean["name"], clean["image_url"], clean["sort_order"], clean["is_active"], image_id),
     )
     await db.commit()
@@ -2429,3 +2460,348 @@ async def get_items_dto(
         category = await get_category_for_item(db, item)
         out.append(to_item_dto(item, variants=variants, category=category, include_variant_images=False))
     return out
+
+
+# ── Combos (curated bundles for the `nhp-combos__grid` section) ─────────────
+# A combo is a marketing bundle: its own image, title, category label,
+# description, price and discount, plus two backing product references
+# (variant slugs/ids or legacy product ids) whose stock gates checkout.
+# Backend remains the source of truth for discount (recomputed server-side).
+
+COMBO_DEFAULT_CATEGORY = "Gawdee Combo"
+
+
+def _cast_combo(row: dict) -> dict:
+    d = dict(row)
+    d["id"] = int(d.get("id", 0))
+    d["slug"] = str(d.get("slug") or "")
+    d["title"] = str(d.get("title") or "")
+    d["category"] = str(d.get("category") or "")
+    d["description"] = str(d.get("description") or "")
+    d["image"] = str(d.get("image") or "")
+    d["product_one_ref"] = str(d.get("product_one_ref") or "")
+    d["product_two_ref"] = str(d.get("product_two_ref") or "")
+    d["selling_price"] = max(0, int(d.get("selling_price") or 0))
+    d["mrp"] = max(0, int(d.get("mrp") or 0))
+    d["discount"] = float(d.get("discount") or 0)
+    d["sort_order"] = int(d.get("sort_order") or 0)
+    d["is_active"] = int(d.get("is_active", 1))
+    d["created_at"] = str(d.get("created_at") or "")
+    d["updated_at"] = str(d.get("updated_at") or "")
+    return d
+
+
+async def _combo_product_exists(db: aiosqlite.Connection, ref: str) -> bool:
+    """A backing product ref is valid when it resolves to a variant
+    (by id, slug, legacy id or sku) or to a legacy products row."""
+    ref = (ref or "").strip()
+    if not ref:
+        return False
+    if await get_variant_by_ref(db, ref, True):
+        return True
+    async with db.execute("SELECT id FROM products WHERE id = ? LIMIT 1", (ref,)) as cur:
+        return await cur.fetchone() is not None
+
+
+async def validate_combo_fields(db: aiosqlite.Connection, fields: dict, ignore_combo_id: Optional[int] = None) -> dict:
+    title = str(fields.get("title") or "").strip()
+    if len(title) < 2 or len(title) > 150:
+        raise ValueError("Combo title must be 2–150 characters.")
+
+    slug = str(fields.get("slug") or "").strip().lower()
+    if not slug:
+        slug = make_slug(title)
+    if not re.match(r"^[a-z0-9-]{2,191}$", slug):
+        raise ValueError("Combo slug must be 2–191 chars of lowercase letters, numbers and hyphens.")
+    q = "SELECT id FROM combos WHERE slug = ?"
+    params: tuple = (slug,)
+    if ignore_combo_id:
+        q += " AND id != ?"
+        params = (slug, ignore_combo_id)
+    async with db.execute(q, params) as cur:
+        if await cur.fetchone():
+            raise ValueError(f'Another combo already uses the slug "{slug}".')
+
+    image = str(fields.get("image") or "").strip()
+    if not image:
+        raise ValueError("Combo image is required. Upload a combo image first.")
+    image = validate_image_url(image, "Combo image")[:500]
+
+    product_one_ref = str(fields.get("product_one_ref", fields.get("productOneRef", "")) or "").strip()
+    product_two_ref = str(fields.get("product_two_ref", fields.get("productTwoRef", "")) or "").strip()
+    if not product_one_ref:
+        raise ValueError("Select the first product for this combo.")
+    if not product_two_ref:
+        raise ValueError("Select the second product for this combo.")
+    if not await _combo_product_exists(db, product_one_ref):
+        raise ValueError(f'The first product "{product_one_ref}" no longer exists. Pick another product.')
+    if not await _combo_product_exists(db, product_two_ref):
+        raise ValueError(f'The second product "{product_two_ref}" no longer exists. Pick another product.')
+
+    # Backend is the discount truth (mirrors variant logic): an explicitly
+    # supplied selling price always wins and the discount is recomputed; a
+    # discount-only payload derives the selling price from the MRP.
+    raw_has_price = str(fields.get("selling_price", fields.get("price", "")) or "").strip() != ""
+    raw_has_discount = str(fields.get("discount", fields.get("discount_percent", "")) or "").strip() != ""
+    mrp = int(round(float(fields.get("mrp", fields.get("original_price", 0)) or 0)))
+    mrp = max(0, min(10000000, mrp))
+    if raw_has_price:
+        selling_price = int(round(float(fields.get("selling_price", fields.get("price", 0)) or 0)))
+        selling_price = max(0, min(10000000, selling_price))
+        if mrp <= 0 and selling_price > 0:
+            mrp = selling_price
+        if selling_price > mrp and mrp > 0:
+            selling_price = mrp
+        discount = calc_discount_percent(mrp, selling_price)
+    elif raw_has_discount:
+        if mrp <= 0:
+            raise ValueError("Enter the MRP (original price) together with the discount.")
+        discount = max(0.0, min(90.0, round(float(fields.get("discount", fields.get("discount_percent", 0)) or 0), 2)))
+        selling_price = gawdee_variant_price(mrp, discount)
+    else:
+        selling_price = int(round(float(fields.get("selling_price", fields.get("price", 0)) or 0)))
+        selling_price = max(0, min(10000000, selling_price))
+        if mrp <= 0 and selling_price > 0:
+            mrp = selling_price
+        if selling_price > mrp and mrp > 0:
+            selling_price = mrp
+        discount = calc_discount_percent(mrp, selling_price)
+    if selling_price <= 0:
+        raise ValueError("Enter a combo price greater than zero.")
+
+    category = str(fields.get("category") or "").strip()[:100] or COMBO_DEFAULT_CATEGORY
+
+    return {
+        "slug": slug,
+        "title": title,
+        "category": category,
+        "description": str(fields.get("description", fields.get("details", "")) or "").strip(),
+        "image": image,
+        "product_one_ref": product_one_ref,
+        "product_two_ref": product_two_ref,
+        "selling_price": selling_price,
+        "mrp": mrp,
+        "discount": discount,
+        "sort_order": max(0, int(fields.get("sort_order", fields.get("sortOrder", 0)) or 0)),
+        "is_active": 1 if fields.get("is_active", fields.get("isActive", 1)) else 0,
+    }
+
+
+async def create_combo(db: aiosqlite.Connection, fields: dict) -> int:
+    clean = await validate_combo_fields(db, fields)
+    await db.execute(
+        "INSERT INTO combos (slug, title, category, description, image, product_one_ref, product_two_ref, "
+        "selling_price, mrp, discount, sort_order, is_active) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (clean["slug"], clean["title"], clean["category"], clean["description"], clean["image"],
+         clean["product_one_ref"], clean["product_two_ref"], clean["selling_price"], clean["mrp"],
+         clean["discount"], clean["sort_order"], clean["is_active"]),
+    )
+    async with db.execute("SELECT last_insert_rowid()") as cur:
+        combo_id = (await cur.fetchone())[0]
+    await db.commit()
+    return int(combo_id)
+
+
+async def update_combo(db: aiosqlite.Connection, combo_id: int, fields: dict) -> None:
+    async with db.execute("SELECT * FROM combos WHERE id = ? LIMIT 1", (combo_id,)) as cur:
+        existing = await cur.fetchone()
+    if not existing:
+        raise ValueError("Combo not found.")
+    merged = {**dict(existing), **fields}
+    clean = await validate_combo_fields(db, merged, combo_id)
+    await db.execute(
+        "UPDATE combos SET slug=?, title=?, category=?, description=?, image=?, product_one_ref=?, "
+        "product_two_ref=?, selling_price=?, mrp=?, discount=?, sort_order=?, is_active=?, "
+        "updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (clean["slug"], clean["title"], clean["category"], clean["description"], clean["image"],
+         clean["product_one_ref"], clean["product_two_ref"], clean["selling_price"], clean["mrp"],
+         clean["discount"], clean["sort_order"], clean["is_active"], combo_id),
+    )
+    await db.commit()
+
+
+async def delete_combo(db: aiosqlite.Connection, combo_id: int) -> None:
+    async with db.execute("SELECT id FROM combos WHERE id = ? LIMIT 1", (combo_id,)) as cur:
+        if not await cur.fetchone():
+            raise ValueError("Combo not found.")
+    await db.execute("DELETE FROM combos WHERE id = ?", (combo_id,))
+    await db.commit()
+
+
+async def _combo_bundle_summary(db: aiosqlite.Connection, ref: str) -> dict:
+    """Display summary for one backing product ref. Never None — falls back
+    to the raw ref so the admin list stays informative when a product was
+    removed after the combo was saved."""
+    ref = (ref or "").strip()
+    if ref:
+        variant = await get_variant_by_ref(db, ref, True)
+        if variant:
+            async with db.execute("SELECT * FROM items WHERE id = ? LIMIT 1", (int(variant["item_id"]),)) as cur:
+                item_row = await cur.fetchone()
+            item = dict(item_row) if item_row else {}
+            mapped = map_variant_row(item or {"name": "Gawdee Product"}, variant)
+            return {
+                "ref": ref,
+                "name": str(mapped.get("full_name") or ref),
+                "image": str(mapped.get("image") or ""),
+                "price": int(mapped.get("price") or 0),
+                "mrp": int(mapped.get("mrp") or 0),
+                "slug": str(mapped.get("variant_slug") or mapped.get("slug") or ""),
+                "item_slug": str(mapped.get("item_slug") or ""),
+            }
+        async with db.execute("SELECT * FROM products WHERE id = ? LIMIT 1", (ref,)) as cur:
+            prod_row = await cur.fetchone()
+        if prod_row:
+            prod = _cast_product(prod_row)
+            return {
+                "ref": ref,
+                "name": str(prod.get("full_name") or prod.get("name") or ref),
+                "image": str(prod.get("image") or ""),
+                "price": int(prod.get("price") or 0),
+                "mrp": int(prod.get("original_price") or 0),
+                "slug": str(prod.get("slug") or ""),
+                "item_slug": "",
+            }
+    return {"ref": ref, "name": ref or "Unknown product", "image": "", "price": 0, "mrp": 0, "slug": "", "item_slug": ""}
+
+
+def to_combo_dto(row: dict, product_one: Optional[dict] = None, product_two: Optional[dict] = None) -> dict:
+    c = _cast_combo(dict(row))
+    discount = float(c.get("discount") or calc_discount_percent(c["mrp"], c["selling_price"]))
+    save_percent = int(round(discount)) if c["mrp"] > c["selling_price"] else 0
+    save_percent = min(100, max(0, save_percent))
+    return {
+        "id": c["id"],
+        "slug": c["slug"],
+        "title": c["title"],
+        "category": c["category"],
+        "description": c["description"],
+        "details": c["description"],
+        "image": c["image"],
+        "alt": c["title"],
+        "product_one_ref": c["product_one_ref"],
+        "productOneRef": c["product_one_ref"],
+        "product_two_ref": c["product_two_ref"],
+        "productTwoRef": c["product_two_ref"],
+        "selling_price": c["selling_price"],
+        "sellingPrice": c["selling_price"],
+        "mrp": c["mrp"],
+        "discount": discount,
+        "discountPercent": save_percent,
+        "save_percent": save_percent,
+        "savePercent": save_percent,
+        "sort_order": c["sort_order"],
+        "sortOrder": c["sort_order"],
+        "is_active": c["is_active"],
+        "isActive": c["is_active"],
+        "product_one": product_one,
+        "productOne": product_one,
+        "product_two": product_two,
+        "productTwo": product_two,
+        "created_at": c["created_at"],
+        "updated_at": c["updated_at"],
+    }
+
+
+async def get_combos(db: aiosqlite.Connection, include_inactive: bool = False) -> list[dict]:
+    sql = "SELECT * FROM combos" + ("" if include_inactive else " WHERE is_active = 1") + " ORDER BY sort_order ASC, id ASC"
+    async with db.execute(sql) as cur:
+        rows = [dict(r) for r in await cur.fetchall()]
+    out = []
+    for r in rows:
+        one = await _combo_bundle_summary(db, str(r.get("product_one_ref") or ""))
+        two = await _combo_bundle_summary(db, str(r.get("product_two_ref") or ""))
+        out.append(to_combo_dto(r, one, two))
+    return out
+
+
+async def get_combo_by_id(db: aiosqlite.Connection, combo_id: int, include_inactive: bool = False) -> Optional[dict]:
+    if not combo_id or int(combo_id) <= 0:
+        return None
+    sql = "SELECT * FROM combos WHERE id = ?" + ("" if include_inactive else " AND is_active = 1") + " LIMIT 1"
+    async with db.execute(sql, (int(combo_id),)) as cur:
+        row = await cur.fetchone()
+    if not row:
+        return None
+    one = await _combo_bundle_summary(db, str(row["product_one_ref"] or ""))
+    two = await _combo_bundle_summary(db, str(row["product_two_ref"] or ""))
+    return to_combo_dto(dict(row), one, two)
+
+
+async def get_combo_by_slug(db: aiosqlite.Connection, slug: str, include_inactive: bool = False) -> Optional[dict]:
+    slug = (slug or "").strip().lower()
+    if not slug:
+        return None
+    sql = "SELECT * FROM combos WHERE slug = ?" + ("" if include_inactive else " AND is_active = 1") + " LIMIT 1"
+    async with db.execute(sql, (slug,)) as cur:
+        row = await cur.fetchone()
+    if not row:
+        return None
+    one = await _combo_bundle_summary(db, str(row["product_one_ref"] or ""))
+    two = await _combo_bundle_summary(db, str(row["product_two_ref"] or ""))
+    return to_combo_dto(dict(row), one, two)
+
+
+async def combo_available_stock(db: aiosqlite.Connection, combo_id: int) -> int:
+    """Sellable quantity for a combo = the scarcest backing product stock.
+    Returns 0 when any backing product is missing, inactive or empty."""
+    async with db.execute("SELECT product_one_ref, product_two_ref FROM combos WHERE id = ? LIMIT 1", (int(combo_id),)) as cur:
+        row = await cur.fetchone()
+    if not row:
+        return 0
+    stocks: list[int] = []
+    for ref in (str(row["product_one_ref"] or ""), str(row["product_two_ref"] or "")):
+        if not ref:
+            return 0
+        variant = await get_variant_by_ref(db, ref, True)
+        if variant:
+            if not int(variant.get("is_active", 1)):
+                return 0
+            stocks.append(max(0, int(variant.get("stock", variant.get("stock_quantity", 0)) or 0)))
+            continue
+        async with db.execute("SELECT stock, is_active FROM products WHERE id = ? LIMIT 1", (ref,)) as cur:
+            prod = await cur.fetchone()
+        if not prod or not int(prod["is_active"]):
+            return 0
+        stocks.append(max(0, int(prod["stock"] or 0)))
+    return min(stocks) if stocks else 0
+
+
+async def resolve_combo_product(db: aiosqlite.Connection, prod_id: str) -> Optional[dict]:
+    """Resolve a `combo-{slug}` cart/checkout id to a synthetic product row.
+    Returns None for non-combo ids or missing/inactive combos so the normal
+    variant/product lookup keeps working untouched."""
+    combo_id = (prod_id or "").strip()
+    if not combo_id.startswith("combo-"):
+        return None
+    combo = await get_combo_by_slug(db, combo_id[len("combo-"):])
+    if not combo:
+        return None
+    refs = [str(combo.get("product_one_ref") or ""), str(combo.get("product_two_ref") or "")]
+    refs = [r for r in refs if r]
+    return {
+        "id": f"combo-{combo['slug']}",
+        "slug": combo["slug"],
+        "name": combo["title"],
+        "full_name": combo["title"],
+        "category": "Combos",
+        "category_key": "combos",
+        "tag": "",
+        "price": int(combo.get("selling_price") or 0),
+        "selling_price": int(combo.get("selling_price") or 0),
+        "original_price": int(combo.get("mrp") or 0),
+        "mrp": int(combo.get("mrp") or 0),
+        "weight": "",
+        "image": str(combo.get("image") or ""),
+        "description": str(combo.get("description") or ""),
+        "accent": "#0a7540",
+        "stock": await combo_available_stock(db, int(combo["id"])),
+        "stock_status": "in_stock",
+        "rating": 0.0,
+        "review_count": 0,
+        "is_active": 1,
+        "combo_id": int(combo["id"]),
+        "combo_slug": combo["slug"],
+        "bundle_refs": refs,
+    }

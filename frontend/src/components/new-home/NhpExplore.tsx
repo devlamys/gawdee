@@ -1,8 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { CatalogItem } from '@/types';
+import { CatalogItem, Combo } from '@/types';
+import { api } from '@/lib/api';
 import { useCart } from '@/context/CartContext';
 import { money, resolveImageUrl } from '@/lib/utils';
 import {
@@ -12,6 +13,7 @@ import {
   variantCartLine,
   variantDiscountPercent,
 } from '@/lib/catalog';
+import { comboDetailHref } from './NhpCombos';
 
 interface ExploreTab {
   key: string;
@@ -166,13 +168,113 @@ function NhpProductCard({ item }: { item: CatalogItem }) {
   );
 }
 
+/** Admin-managed combo rendered as an explore-grid card when the Combos tab is active. */
+function NhpExploreComboCard({ combo }: { combo: Combo }) {
+  const { addItem } = useCart();
+  const savePercent = Number(combo.savePercent ?? combo.save_percent ?? 0) || 0;
+  const sellingPrice = Number(combo.sellingPrice ?? combo.selling_price ?? 0) || 0;
+  const mrp = Number(combo.mrp ?? 0) || 0;
+  const href = comboDetailHref(combo);
+  const image = (combo.image || '').trim();
+
+  const handleAdd = () => {
+    if (!(sellingPrice > 0)) return;
+    addItem(
+      {
+        id: `combo-${combo.slug}`,
+        name: combo.title,
+        price: sellingPrice,
+        original_price: mrp > sellingPrice ? mrp : sellingPrice,
+        image: combo.image || '',
+        type: 'combo',
+        bundle_ids: [combo.productOneRef || combo.product_one_ref, combo.productTwoRef || combo.product_two_ref].filter(
+          Boolean
+        ) as string[],
+      },
+      1,
+      true
+    );
+  };
+
+  return (
+    <article className="nhp-card" data-category="combos">
+      <Link className="nhp-card__media" href={href} aria-label={combo.title}>
+        <div className="nhp-card__badges">
+          {savePercent > 0 && (
+            <span className="nhp-card__badge nhp-card__badge--green">{savePercent}% OFF</span>
+          )}
+        </div>
+        {image ? (
+          <img src={resolveImageUrl(image)} alt={combo.alt || combo.title} loading="lazy" />
+        ) : (
+          <span className="nhp-card__noimage" aria-hidden="true">
+            <i className="ph ph-image"></i>
+          </span>
+        )}
+      </Link>
+
+      <div className="nhp-card__body">
+        <h3 className="nhp-card__title">
+          <Link href={href}>{combo.title}</Link>
+        </h3>
+        <p className="nhp-card__pack">{combo.category || 'Gawdee Combo'}</p>
+        {(combo.details || combo.description) && (
+          <p className="nhp-card__desc nhp-card__desc--desktop" style={{ fontSize: '0.85rem', color: '#7a8a80', marginTop: '2px', margin: 0, textAlign: 'justify' }}>
+            {(combo.details || combo.description).length > 300
+              ? `${(combo.details || combo.description).substring(0, 300)}...`
+              : (combo.details || combo.description)}
+          </p>
+        )}
+
+        <div className="nhp-card__bottom" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 'auto' }}>
+          <div className="nhp-card__price-wrap" style={{ display: 'flex', flexDirection: 'column' }}>
+            <div className="nhp-card__price">
+              <strong>{money(sellingPrice)}</strong>
+              {mrp > sellingPrice && <s>{money(mrp)}</s>}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className="nhp-card__add"
+            data-add-to-cart
+            onClick={handleAdd}
+            disabled={!(sellingPrice > 0)}
+            aria-label={`Add ${combo.title} bundle to bag`}
+          >
+            <i className="ph ph-shopping-cart-simple" aria-hidden="true"></i> ADD
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 export function NhpExplore({ items }: { items: CatalogItem[] }) {
   const [activeTab, setActiveTab] = useState('all');
+  const [combos, setCombos] = useState<Combo[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getCombos()
+      .then((res) => {
+        if (!cancelled) setCombos(res.combos || []);
+      })
+      .catch(() => {
+        if (!cancelled) setCombos([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     const tab = TABS.find((t) => t.key === activeTab) ?? TABS[0];
     return items.filter((item) => matchesTab(item, tab)).slice(0, 8);
   }, [items, activeTab]);
+
+  const isCombosTab = activeTab === 'combos';
 
   return (
     <section className="nhp-explore" id="shop" aria-label="Explore Gawdee products">
@@ -198,7 +300,23 @@ export function NhpExplore({ items }: { items: CatalogItem[] }) {
           ))}
         </div>
 
-        {filtered.length === 0 ? (
+        {isCombosTab ? (
+          combos.length === 0 ? (
+            <div className="nhp-explore__empty">
+              <i className="ph ph-gift" aria-hidden="true"></i>
+              <p>No combo packs yet — fresh bundles are being curated.</p>
+              <Link className="nhp-explore__all" href="/products?category=combos">
+                View all products <i className="ph ph-arrow-right" aria-hidden="true"></i>
+              </Link>
+            </div>
+          ) : (
+            <div className="nhp-grid" aria-label="Combo packs">
+              {combos.slice(0, 8).map((combo) => (
+                <NhpExploreComboCard key={combo.id} combo={combo} />
+              ))}
+            </div>
+          )
+        ) : filtered.length === 0 ? (
           <div className="nhp-explore__empty">
             <i className="ph ph-package" aria-hidden="true"></i>
             <p>No products in this collection yet — fresh batches are on their way.</p>

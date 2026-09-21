@@ -272,6 +272,48 @@ export interface Offer {
   is_active?: boolean;
 }
 
+/** Admin-managed curated bundle (GET /api/combos, Admin > Combos). */
+export interface ComboProductSummary {
+  ref: string;
+  name: string;
+  image: string;
+  price: number;
+  mrp: number;
+  slug: string;
+  item_slug: string;
+}
+
+export interface Combo {
+  id: number;
+  slug: string;
+  title: string;
+  /** Eyebrow label rendered as `.nhp-combo__category` */
+  category: string;
+  description: string;
+  details: string;
+  image: string;
+  alt: string;
+  product_one_ref: string;
+  productOneRef: string;
+  product_two_ref: string;
+  productTwoRef: string;
+  selling_price: number;
+  sellingPrice: number;
+  mrp: number;
+  discount: number;
+  discountPercent: number;
+  save_percent: number;
+  savePercent: number;
+  sort_order: number;
+  sortOrder: number;
+  is_active: number;
+  isActive: number;
+  product_one: ComboProductSummary | null;
+  productOne: ComboProductSummary | null;
+  product_two: ComboProductSummary | null;
+  productTwo: ComboProductSummary | null;
+}
+
 export interface CMSSection {
   id: number;
   section_key: string;

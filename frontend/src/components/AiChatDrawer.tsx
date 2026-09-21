@@ -102,7 +102,7 @@ export const AiChatDrawer: React.FC = () => {
         aria-expanded={isOpen}
       >
         <span className="ai-float__orb">
-          <img src="/assets/images/gawdee-ai-robot-v1.png" alt="" aria-hidden="true" />
+          <img src="/assets/images/gawdee-ai-cow.jpg" alt="" aria-hidden="true" />
         </span>
       </button>
 
@@ -115,7 +115,7 @@ export const AiChatDrawer: React.FC = () => {
       >
         <header>
           <span className="ai-chat__mark">
-            <img src="/assets/images/gawdee-ai-robot-v1.png" alt="" aria-hidden="true" />
+            <img src="/assets/images/gawdee-ai-cow.jpg" alt="" aria-hidden="true" />
           </span>
           <div>
             <strong id="ai-chat-title">Ask Gawdee AI</strong>
