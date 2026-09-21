@@ -1,0 +1,85 @@
+{
+  "name": "Gawdee | Opted-in email offers",
+  "nodes": [
+    {
+      "id": "da607434-4b88-5673-b920-89f0f9ef389d",
+      "name": "Email event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gawdee/marketing-email",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "0769aa10-313c-50a1-8622-be7cfe4661f2"
+    },
+    {
+      "id": "4d67c2db-7c7a-555c-9a9f-c1c811896136",
+      "name": "Prepare email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const event = $input.first().json.body;\nif (!event || event.type !== 'campaign.offer' || !event.event_id) throw new Error('Expected campaign.offer with event_id');\nconst recipient = event.recipient || {};\nconst email = String(recipient.email || '').trim();\nif (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) throw new Error('Invalid email address');\nif (recipient.email_marketing_opt_in !== true || recipient.email_opted_out === true) return [];\nconst offer = event.offer || {};\nconst title = String(offer.title || '').trim().slice(0, 140);\nconst description = String(offer.description || '').trim().slice(0, 1000);\nconst url = String(offer.url || '');\nconst unsubscribeUrl = String(recipient.unsubscribe_url || '');\nif (!title || !description || !/^https:\\/\\/[^\\s]+$/i.test(url) || !/^https:\\/\\/[^\\s]+$/i.test(unsubscribeUrl)) throw new Error('Invalid offer or unsubscribe URL');\nreturn [{json: {event_id: event.event_id, to: email, subject: title,\n  message: `${description}\\n\\nView offer: ${url}\\n\\nUnsubscribe: ${unsubscribeUrl}`}}];\n"
+      }
+    },
+    {
+      "id": "fb69692a-3d48-5cee-8edf-3eab87f5f6bf",
+      "name": "Send offer email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        720,
+        300
+      ],
+      "parameters": {
+        "fromEmail": "Gawdee <REPLACE_SENDER_EMAIL>",
+        "toEmail": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.message }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Email event": {
+      "main": [
+        [
+          {
+            "node": "Prepare email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare email": {
+      "main": [
+        [
+          {
+            "node": "Send offer email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "tags": []
+}

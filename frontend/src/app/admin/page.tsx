@@ -152,10 +152,6 @@ function AdminPageContent() {  const searchParams = useSearchParams();
   // Filter state for categories
   const [categorySearch, setCategorySearch] = useState('');
 
-  // Filter/Sort state for reviews
-  const [reviewSort, setReviewSort] = useState('date-desc');
-  const [reviewSearch, setReviewSearch] = useState('');
-
   // Modal / Form state
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [modalData, setModalData] = useState<any>({});

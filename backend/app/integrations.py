@@ -35,6 +35,7 @@ from .database import (
     get_setting,
     get_order_by_id,
     get_order_items,
+    get_products,
     log_integration,
     record_order_event,
     record_inventory_event,
@@ -348,6 +349,50 @@ async def whatsapp_configured(db: aiosqlite.Connection) -> bool:
     )
 
 
+async def whatsapp_send_text(
+    db: aiosqlite.Connection,
+    phone: str,
+    text: str,
+) -> dict:
+    """Send a plain WhatsApp text reply for product support or follow-up conversations."""
+    if not await whatsapp_configured(db):
+        raise RuntimeError("WhatsApp Cloud API is not configured or enabled.")
+    phone = normalize_phone(phone)
+    text = (text or "").strip()
+    if not phone or len(text) < 1:
+        raise RuntimeError("The WhatsApp recipient or message body is invalid.")
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": phone,
+        "type": "text",
+        "text": {"body": text[:2000]},
+    }
+
+    version = await get_setting(db, "whatsapp_graph_version", "v23.0")
+    if not re.match(r"^v[0-9]+\.[0-9]+$", version):
+        version = "v23.0"
+    phone_id = await get_setting(db, "whatsapp_phone_number_id")
+    access_token = await get_setting(db, "whatsapp_access_token")
+
+    try:
+        response = await http_request(
+            "POST",
+            f"{settings.WHATSAPP_GRAPH_BASE_URL}/{version}/{phone_id}/messages",
+            {"Content-Type": "application/json", "Authorization": f"Bearer {access_token}"},
+            payload,
+        )
+        message_id = str(response["data"].get("messages", [{}])[0].get("id", ""))
+        if not message_id:
+            raise RuntimeError("WhatsApp accepted the text message but returned no message ID.")
+        await log_integration(db, "whatsapp", "send_text", "success", phone, message_id)
+        return {"message_id": message_id, "response": response["data"]}
+    except Exception as error:
+        await log_integration(db, "whatsapp", "send_text", "failed", str(error), phone)
+        raise
+
+
 async def whatsapp_send_template(
     db: aiosqlite.Connection,
     phone: str,
@@ -418,6 +463,132 @@ def whatsapp_verify_webhook(raw_body: str, signature: str, secret: str) -> bool:
 
 def order_tracking_reference(order: dict) -> str:
     return str(order.get("tracking_number") or order.get("delhivery_waybill") or order.get("dtdc_reference") or "")
+
+
+def build_order_whatsapp_payload(order: dict, items: list[dict]) -> dict:
+    """Create a rich WhatsApp order update payload with item image preview."""
+    item = items[0] if items else {}
+    product_name = str(item.get("product_name") or item.get("name") or "your order").strip() or "your order"
+    variant_name = str(item.get("variant_name") or item.get("variant") or "").strip()
+    image_url = str(item.get("image_url") or item.get("image") or "").strip()
+    item_label = f"{product_name} {variant_name}".strip()
+    order_number = str(order.get("order_number") or "order").strip()
+    customer_name = str(order.get("customer_name") or "Customer").strip() or "Customer"
+    total = int(order.get("total") or 0)
+    method = str(order.get("payment_method") or "order").strip() or "order"
+
+    text = (
+        f"Hi {customer_name}! Your order {order_number} is confirmed. "
+        f"Item: {item_label}. Total: ₹{total:,}. Payment: {method}. "
+        "We’ll keep you updated on packing and delivery."
+    )
+    return {"text": text, "image_url": image_url, "item_name": item_label}
+
+
+def build_product_query_answer(query: str, products: list[dict], free_shipping: str, store_email: str) -> str:
+    """Generate a helpful WhatsApp-style product answer using the product catalog."""
+    q = (query or "").lower()
+    if not products:
+        return (
+            "I’m not able to find a matching product right now. Please share the product name or variant you want, "
+            f"and we can help in WhatsApp. For support, email {store_email}."
+        )
+
+    candidate = None
+    for product in products:
+        haystack = " ".join([
+            str(product.get("full_name") or ""),
+            str(product.get("name") or ""),
+            str(product.get("description") or ""),
+            str(product.get("tag") or ""),
+        ]).lower()
+        if any(word in haystack for word in ["ghee", "honey", "mixme", "burra", "taral", "sugar"]):
+            if any(word in q for word in ["ghee", "honey", "mixme", "burra", "taral"]):
+                candidate = product
+                break
+        if any(word in q for word in ["ghee", "honey", "mixme", "burra", "taral", "variant", "price"]) and any(word in haystack for word in q.split() if len(word) > 2):
+            candidate = product
+            break
+    candidate = candidate or products[0]
+
+    product_name = str(candidate.get("full_name") or candidate.get("name") or "This product")
+    price = int(candidate.get("price") or candidate.get("selling_price") or 0)
+    description = str(candidate.get("description") or "").strip()
+    image = str(candidate.get("image") or candidate.get("primary_image") or "").strip()
+    variant_hint = "We offer this product in multiple sizes and pack options. Reply with the product name to get the latest variant list or check our catalogue."
+    if "variant" in q or "size" in q or "pack" in q:
+        variant_hint = (
+            f"{product_name} is available in our standard Gawdee pack options. "
+            f"You can also browse the full variant range on the product page."
+        )
+
+    return (
+        f"{product_name} is a favorite pick at Gawdee. "
+        f"Starting price: ₹{price:,}. {description or 'A wholesome, natural product designed for everyday wellness.'} "
+        f"{variant_hint} Free shipping is available above ₹{free_shipping}. For support, contact {store_email}."
+        f"{f' Image: {image}' if image else ''}"
+    )
+
+
+async def queue_marketing_notification(db: aiosqlite.Connection, user_id: int, channel: str, message: str, product_name: str = "") -> bool:
+    """Queue a WhatsApp/SMS/email marketing or offer update for a user."""
+    async with db.execute("SELECT id, email, phone, whatsapp_marketing_opt_in FROM users WHERE id=? AND role='customer' LIMIT 1", (user_id,)) as cur:
+        user = await cur.fetchone()
+    if not user:
+        return False
+    recipient = normalize_phone(str(user["phone"])) if channel in ("whatsapp", "sms") else str(user["email"] or "").strip()
+    if not recipient:
+        return False
+    if channel == "whatsapp":
+        consent = int(user["whatsapp_marketing_opt_in"] or 0)
+        if consent != 1:
+            return False
+    dedupe = f"marketing:{channel}:{user_id}:{product_name or 'general'}:{message[:80]}"
+    await db.execute(
+        "INSERT OR IGNORE INTO notification_queue (user_id, channel, notification_type, recipient, template_name, language, variables_json, dedupe_key, status) VALUES (?, ?, 'marketing', ?, ?, ?, ?, ?, 'queued')",
+        (user_id, channel, recipient, "marketing_update", "en_US", json.dumps([message], ensure_ascii=False), dedupe),
+    )
+    await db.commit()
+    return True
+
+
+async def queue_visitor_followup(db: aiosqlite.Connection, phone: str, message: str) -> bool:
+    """Create a follow-up message for a site visitor who did not purchase."""
+    phone = normalize_phone(phone)
+    if not phone:
+        return False
+    dedupe = f"visitor_followup:{phone}:{message[:80]}"
+    await db.execute(
+        "INSERT OR IGNORE INTO notification_queue (order_id, user_id, channel, notification_type, recipient, template_name, language, variables_json, dedupe_key, status) VALUES (NULL, NULL, 'whatsapp', 'followup', ?, ?, ?, ?, ?, 'queued')",
+        (phone, "visitor_followup", "en_US", json.dumps([message], ensure_ascii=False), dedupe),
+    )
+    await db.commit()
+    return True
+
+
+async def auto_reply_product_question(db: aiosqlite.Connection, phone: str, message: str) -> Optional[str]:
+    """Answer common product/variant questions automatically via WhatsApp."""
+    query = (message or "").strip()
+    if not query:
+        return None
+
+    products = await get_products(db)
+    if not products:
+        return None
+    answer = build_product_query_answer(
+        query,
+        products,
+        await get_setting(db, "free_shipping_threshold", "999"),
+        await get_setting(db, "store_email", "info@gawdee.com"),
+    )
+    if not answer:
+        return None
+
+    try:
+        await whatsapp_send_text(db, phone, answer)
+    except Exception:
+        await queue_visitor_followup(db, phone, answer)
+    return answer
 
 
 async def queue_order_notification(db: aiosqlite.Connection, order_id: int, notification_type: str) -> bool:

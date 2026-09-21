@@ -805,7 +805,6 @@ async def migrate_domain_v3(db: aiosqlite.Connection) -> None:
 
 
 DOMAIN_SCHEMA_VERSION_V4 = 4
-DOMAIN_SCHEMA_VERSION_V5 = 5
 
 
 async def migrate_domain_v4(db: aiosqlite.Connection) -> None:
@@ -919,7 +918,6 @@ async def migrate(db: aiosqlite.Connection) -> None:
     await migrate_domain_v2(db)
     await migrate_domain_v3(db)
     await migrate_domain_v4(db)
-    await migrate_domain_v5(db)
     await db.executescript(CREATE_TABLES_SQL)
     await migrate_product_reviews_v5(db)
     for sql in CREATE_INDEXES_SQL:
@@ -1950,7 +1948,7 @@ async def deduct_variant_stock(db: aiosqlite.Connection, ref: str | int, qty: in
             )
         except Exception:
             pass
-    await sync_variant_mirror(db, variant["id"])
+    await sync_variant_mirror(db, variant["id"], commit=False)
     return True
 
 
@@ -1971,7 +1969,7 @@ async def restore_variant_stock(db: aiosqlite.Connection, ref: str | int, qty: i
             )
         except Exception:
             pass
-    await sync_variant_mirror(db, variant["id"])
+    await sync_variant_mirror(db, variant["id"], commit=False)
 
 
 async def get_variant_stock(db: aiosqlite.Connection, ref: str | int) -> Optional[int]:
@@ -1981,7 +1979,7 @@ async def get_variant_stock(db: aiosqlite.Connection, ref: str | int) -> Optiona
     return max(0, int(variant.get("stock", variant.get("stock_quantity", 0)) or 0))
 
 
-async def sync_variant_mirror(db: aiosqlite.Connection, variant_id: int) -> None:
+async def sync_variant_mirror(db: aiosqlite.Connection, variant_id: int, commit: bool = True) -> None:
     try:
         async with db.execute(
             "SELECT v.*, i.name AS iname, i.slug AS islug, i.category AS icat, i.category_key AS ikey, "
@@ -1998,7 +1996,8 @@ async def sync_variant_mirror(db: aiosqlite.Connection, variant_id: int) -> None
                 "UPDATE products SET stock=?, price=?, original_price=?, stock_status=CASE WHEN ? > 0 THEN 'in_stock' ELSE 'out_of_stock' END WHERE id=?",
                 (int(r["stock"]), int(r["selling_price"]), int(r["mrp"]), int(r["stock"]), r["legacy_product_id"]),
             )
-            await db.commit()
+            if commit:
+                await db.commit()
             return
 
         mirror_id = str(r["id"])
@@ -2030,7 +2029,8 @@ async def sync_variant_mirror(db: aiosqlite.Connection, variant_id: int) -> None
                  int(r["selling_price"]), int(r["mrp"]), variant_name, image, str(r["idesc"]), str(r["iaccent"]),
                  int(r["stock"]), stock_status, str(r["sku"]), int(r["is_active"])),
             )
-        await db.commit()
+        if commit:
+            await db.commit()
     except Exception:
         pass
 

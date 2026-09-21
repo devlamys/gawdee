@@ -1,0 +1,87 @@
+{
+  "name": "Gawdee | Opted-in SMS offers",
+  "nodes": [
+    {
+      "id": "c1508a08-6a9a-5051-b8d4-55bdac6d9086",
+      "name": "SMS event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gawdee/marketing-sms",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "99cc8622-8a39-53cf-8edb-4c7cc77be185"
+    },
+    {
+      "id": "da1f7a2b-ce7d-5429-8cbc-ba3d5d9b9142",
+      "name": "Prepare SMS",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const event = $input.first().json.body;\nif (!event || event.type !== 'campaign.offer' || !event.event_id) throw new Error('Expected campaign.offer with event_id');\nconst recipient = event.recipient || {};\nconst phone = String(recipient.phone || '').replace(/\\D/g, '');\nif (!/^\\d{8,15}$/.test(phone)) throw new Error('Phone must include country code');\nif (recipient.sms_marketing_opt_in !== true || recipient.sms_opted_out === true) return [];\nconst offer = event.offer || {};\nconst title = String(offer.title || '').trim().slice(0, 100);\nconst description = String(offer.description || '').trim().slice(0, 260);\nconst url = String(offer.url || '');\nconst unsubscribeUrl = String(recipient.unsubscribe_url || '');\nif (!title || !description || !/^https:\\/\\/[^\\s]+$/i.test(url) || !/^https:\\/\\/[^\\s]+$/i.test(unsubscribeUrl)) throw new Error('Invalid offer or unsubscribe URL');\nreturn [{json: {event_id: event.event_id, payload: {to: `+${phone}`, message: `${title}: ${description} ${url} Unsubscribe: ${unsubscribeUrl}`}}}];\n"
+      }
+    },
+    {
+      "id": "f433b4f0-0e83-58d7-a34c-58ef08bd72e1",
+      "name": "Send via SMS provider",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://REPLACE_SMS_PROVIDER_ENDPOINT",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "SMS event": {
+      "main": [
+        [
+          {
+            "node": "Prepare SMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare SMS": {
+      "main": [
+        [
+          {
+            "node": "Send via SMS provider",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "tags": []
+}

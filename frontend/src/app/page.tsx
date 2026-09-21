@@ -184,7 +184,6 @@ export default async function HomePage() {
       <NhpCombos />
 
 
-<<<<<<< HEAD
       {offers.length > 0 && <OfferCards offers={offers} />}
 
       {/* 4. Organic Categories Grid */}
@@ -236,8 +235,6 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
-=======
->>>>>>> eeee777fbebaf097c69a45398f92c2a3f41456c3
 
       {/* 5. Campaign Special Offer Banner (real offer configured in backend settings) */}
       {offerCode && (

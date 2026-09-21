@@ -1,0 +1,87 @@
+{
+  "name": "Gawdee | Purchase item image notifications",
+  "nodes": [
+    {
+      "id": "dcb81ff5-a943-5eb9-884f-d85a4a50b6ec",
+      "name": "order event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gawdee/order",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "9b95fa15-89b2-5c31-b54d-13c6f3c4a85f"
+    },
+    {
+      "id": "e3bffefe-96f5-55b3-af84-b55bfcec2faf",
+      "name": "Prepare order messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const event = $input.first().json.body;\nif (!event || event.type !== 'order.confirmed' || !event.event_id) throw new Error('Expected order.confirmed with event_id');\nconst order = event.order || {};\nconst phone = String(order.phone || '').replace(/\\D/g, '');\nif (!/^\\d{8,15}$/.test(phone) || !order.order_number || !Array.isArray(order.items)) throw new Error('Invalid order notification');\nif (order.whatsapp_order_opt_in !== true || order.whatsapp_opted_out === true) return [];\nif (!['processing', 'packed', 'shipped', 'delivered'].includes(order.status)) return [];\nif (order.payment_status !== 'paid' && order.payment_method !== 'cod') return [];\nconst total = Number(order.total);\nif (!Number.isFinite(total) || total < 0) throw new Error('Invalid order total');\nconst name = String(order.customer_name || 'Customer').slice(0, 80);\nconst number = String(order.order_number).slice(0, 80);\nconst items = order.items;\nif (!items.length) throw new Error('Order has no items');\nif (items.length > 50) throw new Error('Order has too many items for a single notification event');\nreturn items.map((item, index) => {\n  const product = String(item.product_name || '').trim().slice(0, 140);\n  const quantity = Number(item.quantity);\n  if (!product || !Number.isInteger(quantity) || quantity < 1) throw new Error('Invalid order item');\n  const image = String(item.image_url || item.image || '').trim();\n  const hasImage = /^https:\\/\\/[^\\s]+$/i.test(image);\n  const components = [];\n  if (hasImage) components.push({type: 'header', parameters: [{type: 'image', image: {link: image}}]});\n  components.push({type: 'body', parameters: [name, number, product, String(quantity), `₹${total.toLocaleString('en-IN')}`].map(text => ({type: 'text', text}))});\n  return {json: {\n    event_id: `${event.event_id}:item:${index}`,\n    payload: {messaging_product: 'whatsapp', to: phone, type: 'template', template: {\n      name: hasImage ? 'gawdee_order_item_image' : 'gawdee_order_item_text',\n      language: {code: 'en_US'}, components,\n    }},\n  }};\n});\n"
+      }
+    },
+    {
+      "id": "92b6609c-4c38-5025-a62c-418406446060",
+      "name": "Send order WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v23.0/REPLACE_PHONE_NUMBER_ID/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "order event": {
+      "main": [
+        [
+          {
+            "node": "Prepare order messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare order messages": {
+      "main": [
+        [
+          {
+            "node": "Send order WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "tags": []
+}

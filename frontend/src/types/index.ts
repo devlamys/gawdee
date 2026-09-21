@@ -99,6 +99,8 @@ export interface CatalogItem {
   imageUrl?: string;
   hoverImage?: string;
   hoverImageUrl?: string;
+  rich_image_sections?: string | Array<{ landscape?: string; portrait_1?: string; portrait_2?: string }>; 
+  richImageSections?: Array<{ landscape?: string; portrait_1?: string; portrait_2?: string }>;
   category: string;
   categoryKey: string;
   categoryId: number | null;

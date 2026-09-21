@@ -71,12 +71,17 @@ export default function CheckoutPage() {
           const pct = Number(res.settings.offer_percent);
           if (Number.isFinite(pct) && pct > 0) setActiveOfferPercent(pct);
         }
+        if (res.razorpay_enabled === false) {
+          setRazorpayAvailable(false);
+          setPaymentMethod('cod');
+        }
       })
       .catch(() => {});
   }, []);
 
   // Payment method
   const [paymentMethod, setPaymentMethod] = useState<'razorpay' | 'cod'>('razorpay');
+  const [razorpayAvailable, setRazorpayAvailable] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -173,7 +178,7 @@ export default function CheckoutPage() {
         const options = {
           key: rpKeyId,
           amount: (res.razorpay?.amount || res.total * 100),
-          currency: 'INR',
+          currency: res.razorpay?.currency || 'INR',
           name: res.razorpay?.name || 'Gawdee',
           description: res.razorpay?.description || `Order ${res.order_number}`,
           order_id: rpOrderId,
@@ -199,9 +204,11 @@ export default function CheckoutPage() {
                 router.push(`/order-success?order=${res.order_number}`);
               } else {
                 setErrorMsg('Payment verification failed. Please contact support.');
+                setSubmitting(false);
               }
             } catch (err: any) {
               setErrorMsg(err.message || 'Payment verification error.');
+              setSubmitting(false);
             }
           },
           modal: {
@@ -226,7 +233,7 @@ export default function CheckoutPage() {
 
   return (
     <>
-      <Script src={env.razorpayCheckoutUrl} strategy="lazyOnload" />
+      <Script src={env.razorpayCheckoutUrl} strategy="afterInteractive" />
 
       <section className="checkout-shell" style={{ padding: '3rem 0 6rem' }}>
         <div className="container">
@@ -456,12 +463,13 @@ export default function CheckoutPage() {
                       name="payment_method"
                       value="razorpay"
                       checked={paymentMethod === 'razorpay'}
+                      disabled={!razorpayAvailable}
                       onChange={() => setPaymentMethod('razorpay')}
                     />
                     <i className="ph ph-credit-card" style={{ fontSize: '1.6rem', color: '#009a84' }}></i>
                     <div>
                       <strong style={{ display: 'block' }}>Razorpay Online Payment</strong>
-                      <small style={{ color: '#666' }}>UPI (GPay, PhonePe, Paytm), Credit/Debit Cards, Netbanking</small>
+                      <small style={{ color: '#666' }}>{razorpayAvailable ? 'UPI (GPay, PhonePe, Paytm), Credit/Debit Cards, Netbanking' : 'Online payment is not configured yet'}</small>
                     </div>
                   </label>
 

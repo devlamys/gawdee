@@ -66,6 +66,16 @@ async def checkout_pricing(db: aiosqlite.Connection, requested_items: list[dict]
     for req in requested_items:
         prod_id = str(req.get("id", ""))
         product = await get_product_by_id(db, prod_id)
+        if product:
+            # Legacy product rows can mirror a canonical variant. Use its
+            # stock for pricing and reservation so both views stay aligned.
+            canonical = await get_variant_by_ref(db, prod_id, True)
+            if canonical:
+                if not canonical["is_active"] or not canonical["item_is_active"]:
+                    raise ValueError("A product in the cart is no longer available.")
+                product = {**product, "variant_id": canonical["id"],
+                           "legacy_product_id": canonical.get("legacy_product_id") or "",
+                           "item_id": canonical["item_id"]}
         if not product:
             var = await get_variant_by_ref(db, prod_id, False)
             if var:
@@ -376,25 +386,56 @@ async def mark_order_paid(db: aiosqlite.Connection, order_id: int, payment_id: s
 
     if order["payment_status"] != "paid":
         if order["inventory_status"] not in ("reserved", "deducted"):
-            # Re-check and re-deduct stock
+            # A capture can arrive after the reservation expired. Restore the
+            # reservation atomically, including the canonical variant stock.
             items = await get_order_items(db, order_id)
-            for item in items:
-                async with db.execute("SELECT stock FROM products WHERE id = ?", (item["product_id"],)) as cur:
-                    stock_row = await cur.fetchone()
-                if not stock_row or int(stock_row["stock"]) < int(item["quantity"]):
-                    await db.execute(
-                        "UPDATE orders SET payment_status='paid', status='on_hold', payment_error='Payment received, but stock needs manual review.', paid_at=CURRENT_TIMESTAMP, cancelled_at=NULL, razorpay_payment_id=CASE WHEN ?='' THEN razorpay_payment_id ELSE ? END, razorpay_signature=CASE WHEN ?='' THEN razorpay_signature ELSE ? END, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                        (payment_id, payment_id, signature, signature, order_id),
-                    )
-                    await record_order_event(order_id, "on_hold", "Payment received — stock review needed",
-                        "Payment is secure, but fulfilment needs an inventory check by the store team.")
-                    await db.commit()
-                    return
-            for item in items:
+            await db.execute("SAVEPOINT paid_inventory")
+            try:
+                for item in items:
+                    pid = str(item["product_id"])
+                    qty = int(item["quantity"])
+                    variant = await get_variant_by_ref(db, pid, True)
+                    if variant:
+                        async with db.execute(
+                            "UPDATE variant SET stock=stock-? WHERE id=? AND stock>=?",
+                            (qty, variant["id"], qty),
+                        ) as cur:
+                            if cur.rowcount != 1:
+                                raise ValueError("Insufficient stock after payment capture")
+                        async with db.execute("SELECT stock FROM variant WHERE id=?", (variant["id"],)) as cur:
+                            balance = int((await cur.fetchone())["stock"])
+                        mirror_id = str(variant.get("legacy_product_id") or variant["id"])
+                        await db.execute(
+                            "UPDATE products SET stock=?, stock_status=CASE WHEN ?<=0 THEN 'out_of_stock' ELSE 'in_stock' END WHERE id=?",
+                            (balance, balance, mirror_id),
+                        )
+                        await record_inventory_event(db, mirror_id, -qty, balance, "Reserved after late payment capture", order_id)
+                    else:
+                        async with db.execute(
+                            "UPDATE products SET stock=stock-?, stock_status=CASE WHEN stock-?<=0 THEN 'out_of_stock' ELSE 'in_stock' END WHERE id=? AND stock>=?",
+                            (qty, qty, pid, qty),
+                        ) as cur:
+                            if cur.rowcount != 1:
+                                raise ValueError("Insufficient stock after payment capture")
+                        async with db.execute("SELECT stock FROM products WHERE id=?", (pid,)) as cur:
+                            balance = int((await cur.fetchone())["stock"])
+                        await record_inventory_event(db, pid, -qty, balance, "Reserved after late payment capture", order_id)
+                await db.execute("RELEASE SAVEPOINT paid_inventory")
+            except ValueError:
+                await db.execute("ROLLBACK TO SAVEPOINT paid_inventory")
+                await db.execute("RELEASE SAVEPOINT paid_inventory")
                 await db.execute(
-                    "UPDATE products SET stock = stock - ?, stock_status = CASE WHEN stock - ? <= 0 THEN 'out_of_stock' ELSE 'in_stock' END WHERE id = ?",
-                    (int(item["quantity"]), int(item["quantity"]), item["product_id"]),
+                    "UPDATE orders SET payment_status='paid', status='on_hold', payment_error='Payment received, but stock needs manual review.', paid_at=CURRENT_TIMESTAMP, cancelled_at=NULL, razorpay_payment_id=CASE WHEN ?='' THEN razorpay_payment_id ELSE ? END, razorpay_signature=CASE WHEN ?='' THEN razorpay_signature ELSE ? END, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (payment_id, payment_id, signature, signature, order_id),
                 )
+                await record_order_event(db, order_id, "on_hold", "Payment received — stock review needed",
+                    "Payment is secure, but fulfilment needs an inventory check by the store team.")
+                await db.commit()
+                return
+            except Exception:
+                await db.execute("ROLLBACK TO SAVEPOINT paid_inventory")
+                await db.execute("RELEASE SAVEPOINT paid_inventory")
+                raise
 
         await db.execute(
             "UPDATE orders SET payment_status='paid', status='processing', shipment_status='awaiting_fulfillment', inventory_status='deducted', payment_error='', paid_at=CURRENT_TIMESTAMP, cancelled_at=NULL, razorpay_payment_id=CASE WHEN ?='' THEN razorpay_payment_id ELSE ? END, razorpay_signature=CASE WHEN ?='' THEN razorpay_signature ELSE ? END, updated_at=CURRENT_TIMESTAMP WHERE id=?",
