@@ -686,6 +686,7 @@ async def admin_save_offer(payload: SaveOfferPayload, admin: Dict[str, Any] = De
             payload.image_url, payload.link_url, payload.cta_label,
             payload.sort_order, 1 if payload.is_active else 0, payload.id,
         ))
+        offer = await fetch_one("SELECT * FROM offers WHERE id = ?", (payload.id,))
     else:
         await execute("""
             INSERT INTO offers (title, subtitle, description, badge, image_url, link_url, cta_label, sort_order, is_active)
@@ -695,6 +696,22 @@ async def admin_save_offer(payload: SaveOfferPayload, admin: Dict[str, Any] = De
             payload.image_url, payload.link_url, payload.cta_label,
             payload.sort_order, 1 if payload.is_active else 0,
         ))
+        offer = await fetch_one("SELECT * FROM offers WHERE title = ? AND link_url = ? ORDER BY id DESC LIMIT 1", (payload.title, payload.link_url))
+    if offer and int(offer.get("is_active") or 0) == 1:
+        try:
+            from ..integrations import dispatch_offer_campaigns
+            db = await get_db()
+            try:
+                await dispatch_offer_campaigns(db, {
+                    "title": offer.get("title") or payload.title,
+                    "description": offer.get("description") or payload.description or "",
+                    "url": offer.get("link_url") or payload.link_url,
+                    "image_url": offer.get("image_url") or payload.image_url or "",
+                })
+            finally:
+                await db.close()
+        except Exception:
+            pass
     return {"ok": True, "message": "Offer saved successfully"}
 
 @router.delete("/offers/{offer_id}")
@@ -902,6 +919,273 @@ async def admin_delete_blog(post_id: int, admin: Dict[str, Any] = Depends(get_cu
 
 
 # ── Settings, AI & Integrations ─────────────────────────────────────────────
+
+@router.get("/loyalty/settings")
+async def admin_get_loyalty_settings(admin: Dict[str, Any] = Depends(get_current_admin)):
+    defaults = {
+        "enabled": 1,
+        "release_delay_days": 7,
+        "min_redemption_coins": 100,
+        "max_redemption_coins": 100000,
+        "max_redemption_percent": 20,
+        "min_cart_paise": 0,
+        "expiry_months": 0,
+        "expiry_reminder_days": 30,
+        "max_earn_per_order": 100000,
+        "referral_bonus_coins": 0,
+        "first_order_bonus_coins": 0,
+    }
+    values = {}
+    for key, default in defaults.items():
+        raw = await get_setting(await get_db(), f"loyalty_{key}", str(default))
+        try:
+            if key == "enabled":
+                values[key] = bool(int(raw))
+            else:
+                values[key] = int(raw)
+        except Exception:
+            values[key] = default
+    return {"ok": True, "settings": values}
+
+
+@router.put("/loyalty/settings")
+async def admin_save_loyalty_settings(payload: Dict[str, Any], admin: Dict[str, Any] = Depends(get_current_admin)):
+    db = await get_db()
+    try:
+        for key, default in {
+            "enabled": 1,
+            "release_delay_days": 7,
+            "min_redemption_coins": 100,
+            "max_redemption_coins": 100000,
+            "max_redemption_percent": 20,
+            "min_cart_paise": 0,
+            "expiry_months": 0,
+            "expiry_reminder_days": 30,
+            "max_earn_per_order": 100000,
+            "referral_bonus_coins": 0,
+            "first_order_bonus_coins": 0,
+        }.items():
+            if key in payload:
+                value = payload[key]
+                stored = "1" if key == "enabled" and bool(value) else str(int(value if value is not None else default))
+                await set_setting(db, f"loyalty_{key}", stored)
+        await db.commit()
+        return await admin_get_loyalty_settings(admin)
+    finally:
+        await db.close()
+
+
+@router.get("/loyalty/wallets")
+async def admin_get_loyalty_wallets(search: Optional[str] = None, admin: Dict[str, Any] = Depends(get_current_admin)):
+    db = await get_db()
+    try:
+        query = """
+            SELECT w.customer_id, u.name AS customer_name, u.email AS customer_email,
+                   w.available_coins, w.pending_coins, w.reserved_coins,
+                   w.lifetime_earned, w.lifetime_redeemed, w.lifetime_expired, w.lifetime_reversed
+            FROM loyalty_wallets w
+            LEFT JOIN users u ON u.id = w.customer_id
+        """
+        params: list[Any] = []
+        if search and search.strip():
+            term = f"%{search.strip().lower()}%"
+            query += " WHERE LOWER(COALESCE(u.name, '')) LIKE ? OR LOWER(COALESCE(u.email, '')) LIKE ? OR CAST(w.customer_id AS TEXT) LIKE ?"
+            params.extend([term, term, f"%{search.strip()}%"])
+        query += " ORDER BY w.available_coins DESC, w.customer_id ASC LIMIT 200"
+        async with db.execute(query, tuple(params)) as cur:
+            rows = await cur.fetchall()
+        return {"ok": True, "wallets": [dict(row) for row in rows]}
+    finally:
+        await db.close()
+
+
+@router.get("/loyalty/wallets/{customer_id}")
+async def admin_get_loyalty_wallet(customer_id: int, admin: Dict[str, Any] = Depends(get_current_admin)):
+    db = await get_db()
+    try:
+        async with db.execute(
+            """
+            SELECT w.customer_id, u.name AS customer_name, u.email AS customer_email,
+                   w.available_coins, w.pending_coins, w.reserved_coins,
+                   w.lifetime_earned, w.lifetime_redeemed, w.lifetime_expired, w.lifetime_reversed
+            FROM loyalty_wallets w
+            LEFT JOIN users u ON u.id = w.customer_id
+            WHERE w.customer_id = ?
+            """,
+            (customer_id,),
+        ) as cur:
+            wallet = await cur.fetchone()
+        if not wallet:
+            raise HTTPException(status_code=404, detail="Customer wallet not found.")
+        async with db.execute(
+            """
+            SELECT *
+            FROM loyalty_transactions
+            WHERE customer_id = ?
+            ORDER BY id DESC
+            LIMIT 200
+            """,
+            (customer_id,),
+        ) as cur:
+            transactions = [dict(row) for row in await cur.fetchall()]
+        return {"ok": True, "wallet": dict(wallet), "transactions": transactions}
+    finally:
+        await db.close()
+
+
+@router.post("/loyalty/adjustment")
+async def admin_adjust_loyalty_wallet(payload: Dict[str, Any], admin: Dict[str, Any] = Depends(get_current_admin)):
+    customer_id = int(payload.get("customer_id") or 0)
+    coins = int(payload.get("coins") or 0)
+    reason = str(payload.get("reason") or "").strip()
+    reference_id = str(payload.get("reference_id") or "").strip()
+    if not customer_id or abs(coins) <= 0 or len(reason) < 3 or not reference_id:
+        raise HTTPException(status_code=422, detail="Provide a valid customer, a positive whole coin count, a reason, and a reference ID.")
+    db = await get_db()
+    try:
+        async with db.execute("SELECT id FROM users WHERE id = ? AND role = 'customer'", (customer_id,)) as cur:
+            customer = await cur.fetchone()
+        if not customer:
+            raise HTTPException(status_code=404, detail="Customer not found.")
+        from ..loyalty import append_transaction
+        if coins > 0:
+            await append_transaction(
+                db,
+                customer_id,
+                "ADMIN_CREDIT",
+                coins,
+                coins,
+                0,
+                0,
+                reference_id,
+                "AVAILABLE",
+                source="admin",
+                description=reason,
+                allow_negative=True,
+            )
+        else:
+            await append_transaction(
+                db,
+                customer_id,
+                "ADMIN_DEBIT",
+                abs(coins),
+                -abs(coins),
+                0,
+                0,
+                reference_id,
+                "AVAILABLE",
+                source="admin",
+                description=reason,
+                allow_negative=True,
+            )
+        await db.commit()
+        return {"ok": True, "message": "Adjustment recorded."}
+    finally:
+        await db.close()
+
+
+@router.get("/loyalty/reports")
+async def admin_get_loyalty_reports(admin: Dict[str, Any] = Depends(get_current_admin)):
+    db = await get_db()
+    try:
+        async with db.execute(
+            """
+            SELECT
+                COALESCE(SUM(available_coins),0) AS available_coins,
+                COALESCE(SUM(pending_coins),0) AS pending_coins,
+                COALESCE(SUM(lifetime_earned),0) AS total_coins_issued,
+                COALESCE(SUM(lifetime_redeemed),0) AS redeemed_coins,
+                COALESCE(SUM(lifetime_expired),0) AS expired_coins,
+                COALESCE(SUM(lifetime_reversed),0) AS reversed_coins,
+                COUNT(CASE WHEN (available_coins + pending_coins + reserved_coins) > 0 OR lifetime_earned > 0 THEN 1 END) AS customers_using_loyalty,
+                COUNT(DISTINCT CASE WHEN order_id IS NOT NULL THEN order_id END) AS orders_using_loyalty,
+                COALESCE(SUM(CAST(order_value AS INTEGER)),0) AS loyalty_discount_paise
+            FROM loyalty_wallets w
+            LEFT JOIN (
+                SELECT order_id, SUM(loyalty_discount_paise) as order_value
+                FROM orders
+                WHERE loyalty_discount_paise > 0
+                GROUP BY order_id
+            ) o ON 1 = 1
+            """
+        ) as cur:
+            row = await cur.fetchone()
+        async with db.execute(
+            "SELECT COALESCE(SUM(coins), 0) AS referral_rewards FROM loyalty_transactions WHERE transaction_type = 'REFERRAL_REWARD'"
+        ) as cur:
+            referral = await cur.fetchone()
+        async with db.execute(
+            "SELECT COALESCE(SUM(coins), 0) AS promotional_rewards FROM loyalty_transactions WHERE transaction_type = 'PROMOTIONAL_REWARD'"
+        ) as cur:
+            promo = await cur.fetchone()
+        report = {
+            "total_coins_issued": int((row or {}).get("total_coins_issued") or 0),
+            "available_coins": int((row or {}).get("available_coins") or 0),
+            "pending_coins": int((row or {}).get("pending_coins") or 0),
+            "redeemed_coins": int((row or {}).get("redeemed_coins") or 0),
+            "expired_coins": int((row or {}).get("expired_coins") or 0),
+            "reversed_coins": int((row or {}).get("reversed_coins") or 0),
+            "customers_using_loyalty": int((row or {}).get("customers_using_loyalty") or 0),
+            "orders_using_loyalty": int((row or {}).get("orders_using_loyalty") or 0),
+            "loyalty_discount_paise": int((row or {}).get("loyalty_discount_paise") or 0),
+            "referral_rewards": int((referral or {}).get("referral_rewards") or 0),
+            "promotional_rewards": int((promo or {}).get("promotional_rewards") or 0),
+        }
+        return {"ok": True, "reports": report}
+    finally:
+        await db.close()
+
+
+@router.get("/loyalty/restrictions")
+async def admin_get_loyalty_restrictions(admin: Dict[str, Any] = Depends(get_current_admin)):
+    db = await get_db()
+    try:
+        async with db.execute("SELECT * FROM loyalty_product_rules ORDER BY product_id") as cur:
+            products = [dict(row) for row in await cur.fetchall()]
+        async with db.execute("SELECT * FROM loyalty_category_rules ORDER BY category_key") as cur:
+            categories = [dict(row) for row in await cur.fetchall()]
+        return {"ok": True, "products": products, "categories": categories}
+    finally:
+        await db.close()
+
+
+@router.put("/loyalty/restrictions")
+async def admin_save_loyalty_restrictions(payload: Dict[str, Any], admin: Dict[str, Any] = Depends(get_current_admin)):
+    db = await get_db()
+    try:
+        products = payload.get("products", []) or []
+        categories = payload.get("categories", []) or []
+        for row in products:
+            await db.execute(
+                """
+                INSERT INTO loyalty_product_rules (product_id, earn_excluded, redeem_excluded, multiplier, updated_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(product_id) DO UPDATE SET
+                    earn_excluded = excluded.earn_excluded,
+                    redeem_excluded = excluded.redeem_excluded,
+                    multiplier = excluded.multiplier,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (str(row.get("product_id")), 1 if row.get("earn_excluded") else 0, 1 if row.get("redeem_excluded") else 0, int(row.get("multiplier") or 1)),
+            )
+        for row in categories:
+            await db.execute(
+                """
+                INSERT INTO loyalty_category_rules (category_key, earn_excluded, redeem_excluded, multiplier, updated_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(category_key) DO UPDATE SET
+                    earn_excluded = excluded.earn_excluded,
+                    redeem_excluded = excluded.redeem_excluded,
+                    multiplier = excluded.multiplier,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (str(row.get("category_key")), 1 if row.get("earn_excluded") else 0, 1 if row.get("redeem_excluded") else 0, int(row.get("multiplier") or 1)),
+            )
+        await db.commit()
+        return await admin_get_loyalty_restrictions(admin)
+    finally:
+        await db.close()
+
 
 @router.get("/settings")
 async def admin_get_settings(admin: Dict[str, Any] = Depends(get_current_admin)):

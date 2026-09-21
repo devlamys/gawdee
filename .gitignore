@@ -38,6 +38,7 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 
+
 # ========================
 # Misc
 # ========================
@@ -160,3 +161,4 @@ skills-lock.json
 .agents/skills/writing-fragments/agents/openai.yaml
 .agents/skills/writing-shape/SKILL.md
 .agents/skills/writing-shape/agents/openai.yaml
+backend/storage/gawdee.sqlite

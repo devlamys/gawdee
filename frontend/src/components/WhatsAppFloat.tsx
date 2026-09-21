@@ -6,8 +6,8 @@ interface WhatsAppFloatProps {
   phone?: string;
 }
 
-export const WhatsAppFloat: React.FC<WhatsAppFloatProps> = ({ phone = '917055207030' }) => {
-  const cleanNumber = phone.replace(/\D+/g, '') || '917055207030';
+export const WhatsAppFloat: React.FC<WhatsAppFloatProps> = ({ phone = '918891066980' }) => {
+  const cleanNumber = phone.replace(/\D+/g, '') || '918891066980';
 
   return (
     <a

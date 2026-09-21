@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   ['categories', 'ph-squares-four', 'Categories'],
   ['products', 'ph-package', 'Products'],
   ['orders', 'ph-receipt', 'Orders'],
+  ['loyalty', 'ph-coins', 'Loyalty'],
   ['customer_reviews', 'ph-star', 'Customer reviews'],
   ['reels', 'ph-film-strip', 'Video Reels'],
   ['offers', 'ph-tag', 'Offers'],
@@ -31,6 +32,7 @@ const VIEW_TITLES: Record<string, string> = {
   categories: 'Shop by Category',
   products: 'Products',
   orders: 'Orders',
+  loyalty: 'Loyalty coins',
   customer_reviews: 'Customer reviews',
   reels: 'Video Reels',
   offers: 'Offers',
@@ -57,7 +59,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
   const isLoginPage = pathname === '/admin/login';
   const isRegisterPage = pathname === '/admin/register';
   const isPublicPage = isLoginPage || isRegisterPage;
-  const currentView = searchParams.get('view') || 'dashboard';
+  const currentView = pathname === '/admin/loyalty' ? 'loyalty' : (searchParams.get('view') || 'dashboard');
   const pageTitle = VIEW_TITLES[currentView] || 'Control Centre';
 
   useEffect(() => {
@@ -109,7 +111,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
             <Link
               key={key}
               className={currentView === key ? 'is-active' : ''}
-              href={`/admin?view=${key}`}
+              href={key === 'loyalty' ? '/admin/loyalty' : `/admin?view=${key}`}
               onClick={() => setMobileMenuOpen(false)}
             >
               <i className={`ph ${icon}`}></i>

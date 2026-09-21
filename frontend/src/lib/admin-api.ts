@@ -6,6 +6,78 @@
 import { env } from '@/config/env';
 import type { CatalogItem, CatalogVariant, CatalogVariantImage } from '@/types';
 
+export interface LoyaltyAdminSettings {
+  enabled: boolean;
+  release_delay_days: number;
+  min_redemption_coins: number;
+  max_redemption_coins: number;
+  max_redemption_percent: number;
+  min_cart_paise: number;
+  expiry_months: number;
+  expiry_reminder_days: number;
+  max_earn_per_order: number;
+  referral_bonus_coins: number;
+  first_order_bonus_coins: number;
+}
+
+export interface LoyaltyAdminWallet {
+  customer_id: number;
+  customer_name?: string;
+  customer_email?: string;
+  available_coins: number;
+  pending_coins: number;
+  reserved_coins: number;
+  lifetime_earned: number;
+  lifetime_redeemed: number;
+  lifetime_expired: number;
+  lifetime_reversed: number;
+}
+
+export interface LoyaltyAdminTransaction {
+  id: number;
+  transaction_type: string;
+  direction: string;
+  coins: number;
+  status: string;
+  order_id: number | null;
+  reference_id: string;
+  description: string | null;
+  created_at: string;
+}
+
+export interface LoyaltyAdminReports {
+  total_coins_issued: number;
+  available_coins: number;
+  pending_coins: number;
+  redeemed_coins: number;
+  expired_coins: number;
+  reversed_coins: number;
+  customers_using_loyalty: number;
+  orders_using_loyalty: number;
+  loyalty_discount_paise: number;
+  referral_rewards: number;
+  promotional_rewards: number;
+}
+
+export interface LoyaltyProductRestriction {
+  product_id: number;
+  earn_excluded: boolean;
+  redeem_excluded: boolean;
+  multiplier: number;
+}
+
+export interface LoyaltyCategoryRestriction {
+  category_key: string;
+  earn_excluded: boolean;
+  redeem_excluded: boolean;
+  multiplier: number;
+}
+
+export interface LoyaltyRestrictions {
+  products: LoyaltyProductRestriction[];
+  categories: LoyaltyCategoryRestriction[];
+}
+
 const API_BASE = typeof window === 'undefined' ? env.internalApiUrl : env.publicApiUrl;
 
 function getAdminToken(): string | null {
@@ -421,6 +493,52 @@ export const adminApi = {
     return adminFetch('/settings', {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+  },
+
+  // Loyalty administration. The fixed earning and coin value rules are enforced
+  // by the backend and are intentionally absent from the editable settings.
+  async getLoyaltySettings() {
+    return adminFetch<{ ok: boolean; settings: LoyaltyAdminSettings }>('/loyalty/settings');
+  },
+
+  async saveLoyaltySettings(settings: LoyaltyAdminSettings) {
+    return adminFetch<{ ok: boolean; settings: LoyaltyAdminSettings }>('/loyalty/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    });
+  },
+
+  async getLoyaltyWallets(search = '') {
+    const params = new URLSearchParams();
+    if (search.trim()) params.set('search', search.trim());
+    const query = params.toString();
+    return adminFetch<{ ok: boolean; wallets: LoyaltyAdminWallet[] }>(`/loyalty/wallets${query ? `?${query}` : ''}`);
+  },
+
+  async getLoyaltyWallet(customerId: number) {
+    return adminFetch<{ ok: boolean; wallet: LoyaltyAdminWallet; transactions: LoyaltyAdminTransaction[] }>(`/loyalty/wallets/${customerId}`);
+  },
+
+  async adjustLoyaltyWallet(payload: { customer_id: number; coins: number; reason: string; reference_id: string }) {
+    return adminFetch<{ ok: boolean; wallet?: LoyaltyAdminWallet }>('/loyalty/adjustment', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async getLoyaltyReports() {
+    return adminFetch<{ ok: boolean; reports: LoyaltyAdminReports }>('/loyalty/reports');
+  },
+
+  async getLoyaltyRestrictions() {
+    return adminFetch<{ ok: boolean } & LoyaltyRestrictions>('/loyalty/restrictions');
+  },
+
+  async saveLoyaltyRestrictions(restrictions: LoyaltyRestrictions) {
+    return adminFetch<{ ok: boolean } & LoyaltyRestrictions>('/loyalty/restrictions', {
+      method: 'PUT',
+      body: JSON.stringify(restrictions),
     });
   },
 

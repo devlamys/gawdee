@@ -189,6 +189,15 @@ export interface Order {
   discount: number;
   shipping: number;
   total: number;
+  subtotal_paise?: number;
+  shipping_paise?: number;
+  discount_paise?: number;
+  total_paise?: number;
+  loyalty_discount_paise?: number;
+  loyalty_coins_earned?: number;
+  loyalty_coins_redeemed?: number;
+  loyalty_earn_status?: string;
+  loyalty_release_at?: string | null;
   payment_method: string;
   payment_status: string;
   status: string;
@@ -198,6 +207,42 @@ export interface Order {
   created_at: string;
   items?: OrderItem[];
   events?: Array<{ id: number; status: string; title: string; description?: string; created_at: string }>;
+}
+
+export interface LoyaltyWallet {
+  available_coins: number;
+  pending_coins: number;
+  reserved_coins: number;
+  lifetime_earned: number;
+  lifetime_redeemed: number;
+  lifetime_expired: number;
+  lifetime_reversed: number;
+  equivalent_paise: number;
+  expiring_soon_coins: number;
+}
+
+export interface LoyaltyTransaction {
+  id: number;
+  transaction_type: string;
+  direction: string;
+  coins: number;
+  status: string;
+  order_id?: number | null;
+  order_number?: string | null;
+  description?: string | null;
+  reference_id?: string;
+  available_at?: string | null;
+  expires_at?: string | null;
+  created_at: string;
+}
+
+export interface LoyaltyRedemptionQuote {
+  ok: boolean;
+  eligible_paise: number;
+  max_redeemable_coins: number;
+  requested_coins: number;
+  discount_paise: number;
+  available_coins: number;
 }
 
 export interface BlogPost {

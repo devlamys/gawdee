@@ -117,9 +117,34 @@ CREATE TABLE IF NOT EXISTS users (
     pincode TEXT NOT NULL DEFAULT '',
     whatsapp_marketing_opt_in INTEGER NOT NULL DEFAULT 0,
     whatsapp_marketing_opt_in_at TEXT,
+    sms_marketing_opt_in INTEGER NOT NULL DEFAULT 0,
+    sms_marketing_opt_in_at TEXT,
+    email_marketing_opt_in INTEGER NOT NULL DEFAULT 0,
+    email_marketing_opt_in_at TEXT,
+    whatsapp_followup_opt_in INTEGER NOT NULL DEFAULT 0,
+    whatsapp_followup_opt_in_at TEXT,
     whatsapp_opt_out_at TEXT,
+    sms_opt_out_at TEXT,
+    email_opt_out_at TEXT,
+    unsubscribe_url TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_login_at TEXT,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS checkout_leads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
+    phone TEXT NOT NULL DEFAULT '',
+    product_name TEXT NOT NULL DEFAULT '',
+    image_url TEXT NOT NULL DEFAULT '',
+    checkout_url TEXT NOT NULL DEFAULT '',
+    whatsapp_followup_opt_in INTEGER NOT NULL DEFAULT 0,
+    purchased INTEGER NOT NULL DEFAULT 0,
+    abandoned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_purchase_check_at TEXT,
+    purchased_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -405,6 +430,16 @@ CREATE TABLE IF NOT EXISTS orders (
     shipping INTEGER NOT NULL DEFAULT 0,
     discount INTEGER NOT NULL DEFAULT 0,
     total INTEGER NOT NULL,
+    subtotal_paise INTEGER NOT NULL DEFAULT 0,
+    shipping_paise INTEGER NOT NULL DEFAULT 0,
+    discount_paise INTEGER NOT NULL DEFAULT 0,
+    loyalty_discount_paise INTEGER NOT NULL DEFAULT 0,
+    total_paise INTEGER NOT NULL DEFAULT 0,
+    loyalty_eligible_paise INTEGER NOT NULL DEFAULT 0,
+    loyalty_coins_earned INTEGER NOT NULL DEFAULT 0,
+    loyalty_coins_redeemed INTEGER NOT NULL DEFAULT 0,
+    loyalty_earn_status TEXT NOT NULL DEFAULT 'NONE',
+    loyalty_release_at TEXT,
     coupon_code TEXT NOT NULL DEFAULT '',
     checkout_token TEXT NOT NULL DEFAULT '',
     customer_name TEXT NOT NULL,
@@ -451,6 +486,175 @@ CREATE TABLE IF NOT EXISTS order_items (
     unit_price INTEGER NOT NULL,
     image TEXT NOT NULL DEFAULT '',
     FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS loyalty_wallets (
+    customer_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE RESTRICT,
+    available_coins INTEGER NOT NULL DEFAULT 0,
+    pending_coins INTEGER NOT NULL DEFAULT 0 CHECK(pending_coins >= 0),
+    reserved_coins INTEGER NOT NULL DEFAULT 0 CHECK(reserved_coins >= 0),
+    lifetime_earned INTEGER NOT NULL DEFAULT 0,
+    lifetime_redeemed INTEGER NOT NULL DEFAULT 0,
+    lifetime_expired INTEGER NOT NULL DEFAULT 0,
+    lifetime_reversed INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS loyalty_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    transaction_type TEXT NOT NULL,
+    direction TEXT NOT NULL CHECK(direction IN ('CREDIT','DEBIT','TRANSFER')),
+    coins INTEGER NOT NULL CHECK(coins > 0),
+    delta_available INTEGER NOT NULL DEFAULT 0,
+    delta_pending INTEGER NOT NULL DEFAULT 0,
+    delta_reserved INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    order_id INTEGER REFERENCES orders(id) ON DELETE RESTRICT,
+    order_item_id INTEGER REFERENCES order_items(id) ON DELETE RESTRICT,
+    reference_id TEXT NOT NULL UNIQUE,
+    source TEXT NOT NULL DEFAULT 'system',
+    description TEXT NOT NULL DEFAULT '',
+    available_at TEXT,
+    expires_at TEXT,
+    metadata TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TRIGGER IF NOT EXISTS loyalty_transactions_no_update BEFORE UPDATE ON loyalty_transactions
+BEGIN SELECT RAISE(ABORT, 'Loyalty ledger entries are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS loyalty_transactions_no_delete BEFORE DELETE ON loyalty_transactions
+BEGIN SELECT RAISE(ABORT, 'Loyalty ledger entries are immutable'); END;
+
+CREATE TABLE IF NOT EXISTS loyalty_lots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    earn_transaction_id INTEGER NOT NULL UNIQUE REFERENCES loyalty_transactions(id) ON DELETE RESTRICT,
+    order_id INTEGER REFERENCES orders(id) ON DELETE RESTRICT,
+    total_coins INTEGER NOT NULL CHECK(total_coins > 0),
+    pending_coins INTEGER NOT NULL DEFAULT 0 CHECK(pending_coins >= 0),
+    available_coins INTEGER NOT NULL DEFAULT 0 CHECK(available_coins >= 0),
+    reserved_coins INTEGER NOT NULL DEFAULT 0 CHECK(reserved_coins >= 0),
+    spent_coins INTEGER NOT NULL DEFAULT 0 CHECK(spent_coins >= 0),
+    expired_coins INTEGER NOT NULL DEFAULT 0 CHECK(expired_coins >= 0),
+    reversed_coins INTEGER NOT NULL DEFAULT 0 CHECK(reversed_coins >= 0),
+    debt_offset_coins INTEGER NOT NULL DEFAULT 0 CHECK(debt_offset_coins >= 0),
+    available_at TEXT,
+    expires_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS loyalty_reservations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id) ON DELETE RESTRICT,
+    coins INTEGER NOT NULL CHECK(coins > 0),
+    status TEXT NOT NULL CHECK(status IN ('RESERVED','REDEEMED','RELEASED')),
+    reference_id TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS loyalty_allocations (
+    reservation_id INTEGER NOT NULL REFERENCES loyalty_reservations(id) ON DELETE RESTRICT,
+    lot_id INTEGER NOT NULL REFERENCES loyalty_lots(id) ON DELETE RESTRICT,
+    coins INTEGER NOT NULL CHECK(coins > 0),
+    PRIMARY KEY (reservation_id, lot_id)
+);
+
+CREATE TABLE IF NOT EXISTS loyalty_order_lines (
+    order_item_id INTEGER PRIMARY KEY REFERENCES order_items(id) ON DELETE RESTRICT,
+    order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE RESTRICT,
+    customer_id INTEGER REFERENCES users(id) ON DELETE RESTRICT,
+    quantity INTEGER NOT NULL CHECK(quantity > 0),
+    gross_paise INTEGER NOT NULL CHECK(gross_paise >= 0),
+    coupon_discount_paise INTEGER NOT NULL DEFAULT 0 CHECK(coupon_discount_paise >= 0),
+    eligible_paise INTEGER NOT NULL CHECK(eligible_paise >= 0),
+    redeemable_paise INTEGER NOT NULL CHECK(redeemable_paise >= 0),
+    multiplier INTEGER NOT NULL DEFAULT 1 CHECK(multiplier BETWEEN 1 AND 20),
+    redeemed_coins_allocated INTEGER NOT NULL DEFAULT 0,
+    refunded_quantity INTEGER NOT NULL DEFAULT 0,
+    restored_coins INTEGER NOT NULL DEFAULT 0,
+    earn_excluded INTEGER NOT NULL DEFAULT 0,
+    redeem_excluded INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS loyalty_refunds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE RESTRICT,
+    reference_id TEXT NOT NULL UNIQUE,
+    provider_refund_id TEXT NOT NULL DEFAULT '',
+    cash_refund_paise INTEGER NOT NULL CHECK(cash_refund_paise >= 0),
+    restored_coins INTEGER NOT NULL DEFAULT 0,
+    reversed_coins INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL CHECK(status IN ('REQUESTED','CONFIRMED','FAILED')),
+    reason TEXT NOT NULL DEFAULT '',
+    admin_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    confirmed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS loyalty_refund_lines (
+    refund_id INTEGER NOT NULL REFERENCES loyalty_refunds(id) ON DELETE RESTRICT,
+    order_item_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE RESTRICT,
+    quantity INTEGER NOT NULL CHECK(quantity > 0),
+    PRIMARY KEY (refund_id, order_item_id)
+);
+
+CREATE TABLE IF NOT EXISTS loyalty_product_rules (
+    product_id TEXT PRIMARY KEY,
+    earn_excluded INTEGER NOT NULL DEFAULT 0,
+    redeem_excluded INTEGER NOT NULL DEFAULT 0,
+    multiplier INTEGER NOT NULL DEFAULT 1 CHECK(multiplier BETWEEN 1 AND 20),
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS loyalty_category_rules (
+    category_key TEXT PRIMARY KEY,
+    earn_excluded INTEGER NOT NULL DEFAULT 0,
+    redeem_excluded INTEGER NOT NULL DEFAULT 0,
+    multiplier INTEGER NOT NULL DEFAULT 1 CHECK(multiplier BETWEEN 1 AND 20),
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS loyalty_promotions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    multiplier INTEGER NOT NULL DEFAULT 1,
+    bonus_coins INTEGER NOT NULL DEFAULT 0,
+    minimum_eligible_paise INTEGER NOT NULL DEFAULT 0,
+    starts_at TEXT NOT NULL,
+    ends_at TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS loyalty_referrals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    referrer_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    referred_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE RESTRICT,
+    referral_code TEXT NOT NULL,
+    qualifying_order_id INTEGER UNIQUE REFERENCES orders(id) ON DELETE RESTRICT,
+    status TEXT NOT NULL DEFAULT 'REGISTERED',
+    rewarded_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK(referrer_id <> referred_id)
+);
+
+CREATE TABLE IF NOT EXISTS loyalty_outbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    reference_id TEXT NOT NULL UNIQUE,
+    customer_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    event_type TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    sent_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS inventory_events (
@@ -575,6 +779,15 @@ CREATE_INDEXES_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_customer_otps_rate ON customer_otps(requested_ip_hash, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_notification_queue_delivery ON notification_queue(status, scheduled_at, id)",
     "CREATE INDEX IF NOT EXISTS idx_webhook_events_provider ON webhook_events(provider, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_loyalty_transactions_customer ON loyalty_transactions(customer_id, id DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_loyalty_transactions_order ON loyalty_transactions(order_id, id)",
+    "CREATE INDEX IF NOT EXISTS idx_loyalty_lots_release ON loyalty_lots(pending_coins, available_at)",
+    "CREATE INDEX IF NOT EXISTS idx_loyalty_lots_fefo ON loyalty_lots(customer_id, expires_at, id) WHERE available_coins > 0",
+    "CREATE INDEX IF NOT EXISTS idx_loyalty_reservations_expiry ON loyalty_reservations(status, expires_at)",
+    "CREATE INDEX IF NOT EXISTS idx_loyalty_order_lines_order ON loyalty_order_lines(order_id)",
+    "CREATE INDEX IF NOT EXISTS idx_loyalty_refunds_order ON loyalty_refunds(order_id, id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_loyalty_refunds_provider ON loyalty_refunds(provider_refund_id) WHERE provider_refund_id != ''",
+    "CREATE INDEX IF NOT EXISTS idx_loyalty_outbox_pending ON loyalty_outbox(sent_at, id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_items_slug ON items(slug)",
     "CREATE INDEX IF NOT EXISTS idx_items_category ON items(category_key, is_active, id)",
     "CREATE INDEX IF NOT EXISTS idx_items_category_id ON items(category_id)",
@@ -594,6 +807,17 @@ DEFAULT_SETTINGS = {
     "free_shipping_threshold": "999",
     "shipping_fee": "99",
     "cod_enabled": "1",
+    "loyalty_enabled": "1",
+    "loyalty_release_delay_days": "7",
+    "loyalty_min_redemption_coins": "100",
+    "loyalty_max_redemption_coins": "100000",
+    "loyalty_max_redemption_percent": "20",
+    "loyalty_min_cart_paise": "0",
+    "loyalty_expiry_months": "0",
+    "loyalty_expiry_reminder_days": "30",
+    "loyalty_max_earn_per_order": "100000",
+    "loyalty_referral_bonus_coins": "0",
+    "loyalty_first_order_bonus_coins": "0",
     "dtdc_enabled": "0",
     "delhivery_enabled": "0",
     "delhivery_environment": "staging",
@@ -617,6 +841,18 @@ DEFAULT_SETTINGS = {
     "whatsapp_otp_enabled": "0",
     "whatsapp_order_notifications": "1",
     "whatsapp_marketing_enabled": "0",
+    "sms_provider": "twilio",
+    "sms_enabled": "0",
+    "sms_account_sid": "",
+    "sms_auth_token": "",
+    "sms_from_number": "",
+    "sms_marketing_enabled": "0",
+    "email_provider": "sendgrid",
+    "email_enabled": "0",
+    "email_api_key": "",
+    "email_from_email": "info@gawdee.com",
+    "email_from_name": "Gawdee",
+    "email_marketing_enabled": "0",
     "whatsapp_template_otp": "gawdee_login_otp",
     "whatsapp_template_order_confirmed": "gawdee_order_confirmed",
     "whatsapp_template_payment_confirmed": "gawdee_payment_confirmed",
@@ -920,11 +1156,90 @@ async def migrate(db: aiosqlite.Connection) -> None:
     await migrate_domain_v4(db)
     await db.executescript(CREATE_TABLES_SQL)
     await migrate_product_reviews_v5(db)
+    await migrate_loyalty_v6(db)
+    await migrate_consent_v7(db)
     for sql in CREATE_INDEXES_SQL:
         await db.execute(sql)
     await db.execute("PRAGMA optimize")
     await seed_defaults(db)
     await ensure_items_migrated(db)
+    await db.commit()
+
+
+async def migrate_consent_v7(db: aiosqlite.Connection) -> None:
+    """Add consent + lead tracking columns needed for WhatsApp/SMS/email automation."""
+    async with db.execute("PRAGMA user_version") as cur:
+        version = int((await cur.fetchone())[0])
+    if version >= 7:
+        return
+
+    user_columns = {
+        "sms_marketing_opt_in": "INTEGER NOT NULL DEFAULT 0",
+        "sms_marketing_opt_in_at": "TEXT",
+        "email_marketing_opt_in": "INTEGER NOT NULL DEFAULT 0",
+        "email_marketing_opt_in_at": "TEXT",
+        "whatsapp_followup_opt_in": "INTEGER NOT NULL DEFAULT 0",
+        "whatsapp_followup_opt_in_at": "TEXT",
+        "sms_opt_out_at": "TEXT",
+        "email_opt_out_at": "TEXT",
+        "unsubscribe_url": "TEXT NOT NULL DEFAULT ''",
+    }
+
+    if await _table_exists(db, "users"):
+        for name, ddl in user_columns.items():
+            if not await _column_exists(db, "users", name):
+                await db.execute(f"ALTER TABLE users ADD COLUMN {name} {ddl}")
+
+    if not await _table_exists(db, "checkout_leads"):
+        await db.execute("""
+            CREATE TABLE checkout_leads (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
+                phone TEXT NOT NULL DEFAULT '',
+                product_name TEXT NOT NULL DEFAULT '',
+                image_url TEXT NOT NULL DEFAULT '',
+                checkout_url TEXT NOT NULL DEFAULT '',
+                whatsapp_followup_opt_in INTEGER NOT NULL DEFAULT 0,
+                purchased INTEGER NOT NULL DEFAULT 0,
+                abandoned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                last_purchase_check_at TEXT,
+                purchased_at TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+    await db.execute("PRAGMA user_version = 7")
+    await db.commit()
+
+
+async def migrate_loyalty_v6(db: aiosqlite.Connection) -> None:
+    """Add paise order snapshots to existing databases without rewriting legacy prices."""
+    async with db.execute("PRAGMA user_version") as cur:
+        version = int((await cur.fetchone())[0])
+    if version >= 6:
+        return
+    columns = {
+        "subtotal_paise": "INTEGER NOT NULL DEFAULT 0",
+        "shipping_paise": "INTEGER NOT NULL DEFAULT 0",
+        "discount_paise": "INTEGER NOT NULL DEFAULT 0",
+        "loyalty_discount_paise": "INTEGER NOT NULL DEFAULT 0",
+        "total_paise": "INTEGER NOT NULL DEFAULT 0",
+        "loyalty_eligible_paise": "INTEGER NOT NULL DEFAULT 0",
+        "loyalty_coins_earned": "INTEGER NOT NULL DEFAULT 0",
+        "loyalty_coins_redeemed": "INTEGER NOT NULL DEFAULT 0",
+        "loyalty_earn_status": "TEXT NOT NULL DEFAULT 'NONE'",
+        "loyalty_release_at": "TEXT",
+    }
+    for name, ddl in columns.items():
+        if not await _column_exists(db, "orders", name):
+            await db.execute(f"ALTER TABLE orders ADD COLUMN {name} {ddl}")
+    await db.execute("""
+        UPDATE orders SET subtotal_paise=subtotal*100, shipping_paise=shipping*100,
+            discount_paise=discount*100, total_paise=total*100
+        WHERE total_paise=0 AND loyalty_discount_paise=0
+    """)
+    await db.execute("PRAGMA user_version = 6")
     await db.commit()
 
 

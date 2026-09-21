@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { Order, OrderItem } from '@/types';
 import { money, resolveImageUrl } from '@/lib/utils';
+import { formatCoins, formatPaise } from '@/lib/loyalty';
 
 export default function OrderTrackingDetailPage() {
   const params = useParams();
@@ -89,7 +90,7 @@ export default function OrderTrackingDetailPage() {
 
             <div style={{ textAlign: 'right' }}>
               <span style={{ fontSize: '0.85rem', color: '#777', display: 'block' }}>Total Paid / Payable</span>
-              <strong style={{ fontSize: '1.8rem', color: '#009a84' }}>{money(order.total)}</strong>
+              <strong style={{ fontSize: '1.8rem', color: '#009a84' }}>{Number.isSafeInteger(order.total_paise) ? formatPaise(order.total_paise as number) : money(order.total)}</strong>
             </div>
           </div>
         </div>
@@ -198,10 +199,24 @@ export default function OrderTrackingDetailPage() {
                 <span>Delivery</span>
                 <span>{order.shipping === 0 ? 'FREE' : money(order.shipping)}</span>
               </div>
+              {(order.loyalty_discount_paise ?? 0) > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#009a84' }}>
+                  <span>Loyalty Coins ({formatCoins(order.loyalty_coins_redeemed ?? order.loyalty_discount_paise ?? 0)})</span>
+                  <span>−{formatPaise(order.loyalty_discount_paise ?? 0)}</span>
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.1rem', fontWeight: 800, borderTop: '1px solid #eee', paddingTop: '0.6rem', marginTop: '0.4rem' }}>
                 <span>Grand Total</span>
-                <span style={{ color: '#009a84' }}>{money(order.total)}</span>
+                <span style={{ color: '#009a84' }}>{Number.isSafeInteger(order.total_paise) ? formatPaise(order.total_paise as number) : money(order.total)}</span>
               </div>
+              {((order.loyalty_coins_earned ?? 0) > 0 || (order.loyalty_coins_redeemed ?? 0) > 0) && (
+                <div style={{ borderTop: '1px solid #eee', marginTop: '0.7rem', paddingTop: '0.9rem', color: '#555' }}>
+                  <strong style={{ display: 'block', color: '#111', marginBottom: '0.4rem' }}>Loyalty Coins</strong>
+                  {(order.loyalty_coins_earned ?? 0) > 0 && <span style={{ display: 'block' }}>{formatCoins(order.loyalty_coins_earned ?? 0)} coins from this order • {order.loyalty_earn_status || 'Pending'}</span>}
+                  {(order.loyalty_coins_redeemed ?? 0) > 0 && <span style={{ display: 'block' }}>{formatCoins(order.loyalty_coins_redeemed ?? 0)} coins used • {formatPaise(order.loyalty_discount_paise ?? 0)}</span>}
+                  <Link href="/account/loyalty" style={{ display: 'inline-block', color: '#009a84', marginTop: '0.6rem' }}>View wallet and history →</Link>
+                </div>
+              )}
             </div>
           </div>
 

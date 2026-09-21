@@ -14,7 +14,8 @@ from ..integrations import (
     razorpay_verify_webhook, razorpay_payment_matches_order,
     whatsapp_verify_webhook, normalize_phone,
     process_notification_queue, delhivery_map_order_status,
-    auto_reply_product_question,
+    auto_reply_product_question, build_whatsapp_support_event,
+    forward_whatsapp_support_event,
 )
 from ..commerce import mark_order_paid, update_order_status, order_allowed_transitions
 from ..core.config import settings
@@ -226,11 +227,11 @@ async def whatsapp_webhook_receive(request: Request):
                             (state, error_message, message_id),
                         )
 
-                    # ── Marketing opt-out and auto-replies
+                    # ── Marketing opt-out and product support
                     for message in value.get("messages", []):
                         from_number = str(message.get("from", "")).strip()
                         phone = normalize_phone(from_number)
-                        text = str(message.get("text", {}).get("body") or message.get("button", {}).get("text", "")).strip()
+                        text = str((message.get("text") or {}).get("body") or (message.get("button") or {}).get("text") or "").strip()
                         lowered = text.lower().strip()
 
                         if lowered in ("stop", "unsubscribe", "cancel", "opt out") and phone:
@@ -241,7 +242,24 @@ async def whatsapp_webhook_receive(request: Request):
                             continue
 
                         if phone and text:
-                            await auto_reply_product_question(db, phone, text)
+                            support_event = build_whatsapp_support_event(message)
+                            if not support_event:
+                                continue
+                            message_key = support_event["message_id"]
+                            if not await record_webhook_event(db, "whatsapp_message", message_key, "inbound", json.dumps(message)):
+                                continue
+                            try:
+                                forwarded = await forward_whatsapp_support_event(db, support_event)
+                                if not forwarded:
+                                    await auto_reply_product_question(db, phone, text)
+                                await complete_webhook_event(db, "whatsapp_message", message_key)
+                            except Exception:
+                                await db.execute(
+                                    "DELETE FROM webhook_events WHERE provider=? AND event_key=?",
+                                    ("whatsapp_message", message_key),
+                                )
+                                await db.commit()
+                                raise
 
             await db.commit()
             await complete_webhook_event(db, "whatsapp", event_key)

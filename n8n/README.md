@@ -1,15 +1,24 @@
 # Gawdee WhatsApp automation in n8n
 
-These six importable workflows handle order item images, abandoned checkout follow-ups, opted-in offers over WhatsApp/SMS/email, and product/variant questions. They are **inactive** exports. The website integration and provider credentials are still needed before messages can be sent.
+These six importable workflows handle order item images, abandoned checkout follow-ups, opted-in offers over WhatsApp/SMS/email, and product/variant questions. They are **inactive** exports. Provider credentials and publishing are needed before messages can be sent. The backend can relay signed incoming Meta messages to the support workflow once configured.
 
 ## Import and configure
 
 1. Import each JSON file in [`workflows/`](workflows) into n8n. Attach a **Header Auth** credential to every Webhook node. Use a long shared secret in a header such as `X-Gawdee-Automation-Key`. Send events only from a trusted server, never from the browser. Publish the workflows after configuration. n8n uses different test and production webhook URLs.
 2. On each WhatsApp HTTP Request node, replace `REPLACE_PHONE_NUMBER_ID` with the Meta phone number ID and attach an **HTTP Bearer Auth** credential holding the Cloud API access token. Create and get approval for the templates below in WhatsApp Manager. Use public HTTPS image URLs reachable by Meta. Review the API version in the URL before deployment.
-3. In the support workflow, replace `REPLACE_BACKEND_HOST` with the public backend host. Its `GET /api/catalog/items` endpoint supplies current item/variant names, stock, and selling prices. Attach backend authentication if this endpoint becomes private.
+3. In the support workflow, replace the `Read current catalog` URL with a backend URL reachable from the n8n process, such as `http://127.0.0.1:8001/api/catalog/items` when both run directly on the same machine. Its endpoint supplies current item/variant names, stock, and selling prices. Attach backend authentication if this endpoint becomes private.
 4. In the SMS workflow, replace `REPLACE_SMS_PROVIDER_ENDPOINT` and adapt the JSON body to the chosen SMS provider. The default body is `{ "to": "+91...", "message": "..." }`; providers vary. Attach the provider's credential.
 5. In the email workflow, set `REPLACE_SENDER_EMAIL` and attach an SMTP credential. Make the supplied unsubscribe URL actually remove email marketing consent before publishing.
 6. Run `python3 n8n/build.py` after editing a Code node source. Run `node n8n/verify.mjs` to check the exports and payload rules.
+
+## Connect incoming WhatsApp support messages
+
+1. Register the business phone number in Meta WhatsApp Cloud API and obtain its Phone Number ID and Meta App Secret. For a local test, keep the backend on port 8001 and expose it through a temporary HTTPS tunnel. Set Meta's callback URL to `https://YOUR-TUNNEL/api/webhooks/whatsapp` and subscribe to the `messages` field. Meta must reach the backend callback, not the n8n support webhook: the backend verifies Meta's challenge and signature, processes `STOP`, and translates messages to the n8n event format.
+2. From the `backend/` directory, run `./.venv/bin/python configure_whatsapp_support.py`. Enter the Meta App Secret and the n8n production webhook URL. The script securely stores the Meta verify token, App Secret, and n8n Header Auth value in backend settings. Copy the printed verify token into Meta and the printed Header Auth value into the n8n support Webhook credential. If you already configured either value, enter it at the prompt to reuse it.
+3. In n8n, configure the support workflow's `Read current catalog` URL and `Send support reply` node. The latter needs the Meta Phone Number ID in its URL and an HTTP Bearer Auth credential with the Cloud API access token. Publish the workflow so `/webhook/gawdee/support` is registered; the `/webhook-test/` URL only works while listening for a test event.
+4. Send a product question to the Cloud API number from another WhatsApp account. Check the backend integration log for `support_forward_accepted`, then check the support workflow's **Executions** tab for catalog and Meta send results. n8n acknowledges the webhook before the reply node completes, so an accepted relay alone does not prove WhatsApp delivery.
+
+When `n8n_support_webhook_url` is configured, the backend forwards inbound text only to n8n and does not run its direct product reply for that message. Each Meta message ID is deduplicated before forwarding. Without the n8n URL, the existing direct reply path remains in use.
 
 ## Event contract for the later website integration
 
@@ -128,10 +137,10 @@ Template approval and category are determined by Meta. Adjust the component layo
 
 - `orders` and `order_items` already contain order totals, purchased item names, quantities, and image paths. Convert image paths to public HTTPS URLs when producing the order event.
 - `users.whatsapp_marketing_opt_in` and `whatsapp_opt_out_at` already exist. Order-update permission, SMS and email marketing consent, unsubscribe links, and phone-lead/cart abandonment records do **not** exist yet; add them with the later app integration before enabling those flows.
-- The existing WhatsApp webhook currently receives Meta callbacks, and there are uncommitted changes for direct product auto-replies. When connecting n8n, make that backend handler verify Meta signatures, deduplicate messages, process STOP, and forward inbound text to `gawdee/support`. Disable its direct auto-reply to avoid two answers.
+- The existing WhatsApp webhook verifies Meta signatures, deduplicates message IDs, processes `STOP`, and forwards inbound text to `gawdee/support` when the n8n support URL and key are configured. It skips its direct product reply in that case.
 - Existing order notification queue processing can also send WhatsApp templates. Switch that path off for events handled by n8n to avoid duplicate order notices.
 - Use server-side authorization, rate limits, and audit logs for campaign dispatch. Recheck consent at send time, keep campaign frequency limits, and suppress opted-out recipients across every channel.
 
-The workflows are a prepared integration package; they have not been connected to a live n8n instance or message providers. The app does not yet emit these event payloads.
+The support relay is implemented but requires the Meta and n8n settings above. Other workflows are prepared integration packages; the app does not yet emit their event payloads.
 
 References: [n8n Webhook and authentication](https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.webhook/), [n8n WhatsApp Cloud node](https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.whatsapp/), [n8n SMTP email node](https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.sendemail/), [WhatsApp Business Messaging Policy](https://whatsappbusiness.com/policy/).
