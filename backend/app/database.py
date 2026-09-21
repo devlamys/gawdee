@@ -183,6 +183,7 @@ CREATE TABLE IF NOT EXISTS items (
     rating REAL NOT NULL DEFAULT 0,
     review_count INTEGER NOT NULL DEFAULT 0,
     is_active INTEGER NOT NULL DEFAULT 1,
+    rich_image_sections TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -804,6 +805,7 @@ async def migrate_domain_v3(db: aiosqlite.Connection) -> None:
 
 
 DOMAIN_SCHEMA_VERSION_V4 = 4
+DOMAIN_SCHEMA_VERSION_V5 = 5
 
 
 async def migrate_domain_v4(db: aiosqlite.Connection) -> None:
@@ -917,6 +919,7 @@ async def migrate(db: aiosqlite.Connection) -> None:
     await migrate_domain_v2(db)
     await migrate_domain_v3(db)
     await migrate_domain_v4(db)
+    await migrate_domain_v5(db)
     await db.executescript(CREATE_TABLES_SQL)
     await migrate_product_reviews_v5(db)
     for sql in CREATE_INDEXES_SQL:
@@ -1621,6 +1624,7 @@ def validate_item_fields(fields: dict) -> dict:
         "tag": str(fields.get("tag") or "").strip()[:100],
         "accent": accent,
         "is_active": 1 if fields.get("is_active", 1) else 0,
+        "rich_image_sections": fields.get("rich_image_sections") if isinstance(fields.get("rich_image_sections"), str) else __import__('json').dumps(fields.get("rich_image_sections") or []),
     }
 
 
@@ -1758,11 +1762,11 @@ async def create_item(db: aiosqlite.Connection, fields: dict) -> int:
         if not await get_category_by_id(db, clean["category_id"]):
             raise ValueError("Category does not exist.")
     await db.execute(
-        "INSERT INTO items (slug, name, flavor, description, image_url, hover_image_url, customer_review, category, category_key, category_id, tag, accent, is_active) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO items (slug, name, flavor, description, image_url, hover_image_url, customer_review, category, category_key, category_id, tag, accent, is_active, rich_image_sections) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (clean["slug"], clean["name"], clean["flavor"], clean["description"], clean["image_url"], clean["hover_image_url"],
          clean["customer_review"], clean["category"], clean["category_key"], clean["category_id"],
-         clean["tag"], clean["accent"], clean["is_active"]),
+         clean["tag"], clean["accent"], clean["is_active"], clean["rich_image_sections"]),
     )
     async with db.execute("SELECT last_insert_rowid()") as cur:
         item_id = (await cur.fetchone())[0]
@@ -1784,10 +1788,10 @@ async def update_item(db: aiosqlite.Connection, item_id: int, fields: dict) -> N
             raise ValueError("Category does not exist.")
     await db.execute(
         "UPDATE items SET slug=?, name=?, flavor=?, description=?, image_url=?, hover_image_url=?, customer_review=?, "
-        "category=?, category_key=?, category_id=?, tag=?, accent=?, is_active=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        "category=?, category_key=?, category_id=?, tag=?, accent=?, is_active=?, rich_image_sections=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
         (clean["slug"], clean["name"], clean["flavor"], clean["description"], clean["image_url"], clean["hover_image_url"],
          clean["customer_review"], clean["category"], clean["category_key"], clean["category_id"],
-         clean["tag"], clean["accent"], clean["is_active"], item_id),
+         clean["tag"], clean["accent"], clean["is_active"], clean["rich_image_sections"], item_id),
     )
     await db.commit()
 
@@ -1847,7 +1851,7 @@ async def update_variant(db: aiosqlite.Connection, variant_id: int, fields: dict
     clean = await validate_variant_fields(db, merged, item_id, variant_id)
     await db.execute(
         "UPDATE variant SET item_id=?, variant_name=?, slug=?, sku=?, stock=?, mrp=?, discount=?, selling_price=?, "
-        "is_inclusive=?, is_lab_tested=?, is_natural=?, uom=?, image=?, is_active=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        "is_inclusive=?, is_lab_tested=?, is_natural=?, uom=?, image=?, is_active=?, rich_image_sections=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
         (item_id, clean["variant_name"], clean["slug"], clean["sku"], clean["stock"], clean["mrp"],
          clean["discount"], clean["selling_price"], clean["is_inclusive"], clean["is_lab_tested"], clean["is_natural"], clean["uom"], clean["image"], clean["is_active"], variant_id),
     )
@@ -2100,7 +2104,7 @@ async def update_variant_image(db: aiosqlite.Connection, image_id: int, fields: 
     }
     clean = validate_variant_image_fields(merged)
     await db.execute(
-        "UPDATE variant_image SET name=?, image_url=?, sort_order=?, is_active=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        "UPDATE variant_image SET name=?, image_url=?, sort_order=?, is_active=?, rich_image_sections=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
         (clean["name"], clean["image_url"], clean["sort_order"], clean["is_active"], image_id),
     )
     await db.commit()

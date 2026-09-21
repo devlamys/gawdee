@@ -4,12 +4,12 @@ import { resolveImageUrl } from '@/lib/utils';
 
 const QUALITY_CARDS = [
   {
-    icon: 'ph-stars',
+    icon: 'ph-shield-check',
     title: 'Quality Ingredients',
     text: 'Carefully selected ingredients with a focus on purity and natural quality.',
   },
   {
-    icon: 'ph-hourglass',
+    icon: 'ph-cooking-pot',
     title: 'Traditional Processing',
     text: 'Traditional methods chosen to preserve the natural qualities of our ingredients.',
   },
@@ -19,12 +19,12 @@ const QUALITY_CARDS = [
     text: 'Carefully packed in food-safe packaging to protect freshness and quality.',
   },
   {
-    icon: 'ph-book-open',
+    icon: 'ph-file-text',
     title: 'Product Transparency',
     text: 'Complete ingredient origins stamped clearly on every package.',
   },
   {
-    icon: 'ph-headset',
+    icon: 'ph-chats',
     title: 'Customer Support',
     text: "We're here to help with your orders, products and questions.",
   },

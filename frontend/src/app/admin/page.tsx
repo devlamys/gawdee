@@ -136,6 +136,7 @@ function AdminPageContent() {  const searchParams = useSearchParams();
   const [banners, setBanners] = useState<any[]>([]);
   const [bannersTwo, setBannersTwo] = useState<any[]>([]);
   const [testimonials, setTestimonials] = useState<any[]>([]);
+  const [reviews, setReviews] = useState<any[]>([]);
   const [blogPosts, setBlogPosts] = useState<any[]>([]);
   const [settings, setSettings] = useState<Record<string, any>>({});
 
@@ -150,6 +151,10 @@ function AdminPageContent() {  const searchParams = useSearchParams();
 
   // Filter state for categories
   const [categorySearch, setCategorySearch] = useState('');
+
+  // Filter/Sort state for reviews
+  const [reviewSort, setReviewSort] = useState('date-desc');
+  const [reviewSearch, setReviewSearch] = useState('');
 
   // Modal / Form state
   const [activeModal, setActiveModal] = useState<string | null>(null);
@@ -318,6 +323,9 @@ function AdminPageContent() {  const searchParams = useSearchParams();
       } else if (view === 'testimonials') {
         const res = await adminApi.getTestimonials();
         if (res?.ok) setTestimonials(res.testimonials || []);
+      } else if (view === 'reviews') {
+        const res = await adminApi.getReviews();
+        if (res?.ok) setReviews(res.reviews || []);
       } else if (view === 'blog') {
         const res = await adminApi.getBlog();
         if (res?.ok) setBlogPosts(res.posts || []);
@@ -693,6 +701,12 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                                 hoverImageUrl: p.hoverImageUrl || p.hoverImage || '',
                                 description: p.description || '',
                                 is_active: p.isActive !== 0,
+                                rich_image_sections: (() => {
+                                  try {
+                                    const val = p.richImageSections || p.rich_image_sections;
+                                    return typeof val === 'string' ? JSON.parse(val) : (val || []);
+                                  } catch (e) { return []; }
+                                })(),
                                 variants: (p.variants || []).map((v: any) => ({
                                   id: v.id,
                                   variantName: v.variantName || 'Standard',
@@ -1429,6 +1443,110 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                           <i className="ph ph-trash"></i>
                         </button>
                       </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* ──────────────────────────────────────────────────────────────────────────
+          CUSTOMER REVIEWS VIEW
+          ────────────────────────────────────────────────────────────────────────── */}
+      {view === 'reviews' && (
+        <section className="admin-card">
+          <div className="admin-card__head">
+            <div>
+              <h2>Customer Reviews ({reviews.length})</h2>
+              <p>Manage product reviews from your customers.</p>
+            </div>
+          </div>
+          
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid #e1e7e2', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+            <div className="admin-input-group" style={{ marginBottom: 0, flex: 1, minWidth: '200px' }}>
+              <div className="admin-input-with-icon">
+                <i className="ph ph-magnifying-glass"></i>
+                <input 
+                  type="text" 
+                  placeholder="Search reviews by name, content..."
+                  value={reviewSearch}
+                  onChange={(e) => setReviewSearch(e.target.value)}
+                />
+              </div>
+            </div>
+            
+            <div className="admin-input-group" style={{ marginBottom: 0, width: '240px' }}>
+              <select value={reviewSort} onChange={(e) => setReviewSort(e.target.value)} className="admin-input" style={{ appearance: 'auto' }}>
+                <option value="date-desc">Newest First</option>
+                <option value="date-asc">Oldest First</option>
+                <option value="rating-desc">Highest Rated</option>
+                <option value="rating-asc">Lowest Rated</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Rating</th>
+                  <th>Review</th>
+                  <th>Customer</th>
+                  <th>Date</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reviews.length === 0 && (
+                  <tr className="admin-table__empty">
+                    <td colSpan={5}>
+                      <i className="ph ph-star" style={{ fontSize: '1.6rem', display: 'block', marginBottom: '8px' }}></i>
+                      No reviews found.
+                    </td>
+                  </tr>
+                )}
+                {reviews
+                  .filter(r => !reviewSearch || `${r.name || r.author_name} ${r.review || r.body}`.toLowerCase().includes(reviewSearch.toLowerCase()))
+                  .sort((a, b) => {
+                    const dateA = new Date(a.created_at || a.date || 0).getTime();
+                    const dateB = new Date(b.created_at || b.date || 0).getTime();
+                    if (reviewSort === 'date-desc') return dateB - dateA;
+                    if (reviewSort === 'date-asc') return dateA - dateB;
+                    if (reviewSort === 'rating-desc') return (b.rating || 0) - (a.rating || 0);
+                    if (reviewSort === 'rating-asc') return (a.rating || 0) - (b.rating || 0);
+                    return 0;
+                  })
+                  .map((r) => (
+                  <tr key={r.id}>
+                    <td>
+                      <div style={{ display: 'flex', color: '#f59e0b', gap: '2px' }}>
+                        {[...Array(r.rating || 5)].map((_, i) => (
+                          <i key={i} className="ph-fill ph-star"></i>
+                        ))}
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ maxWidth: '350px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {r.review || r.body}
+                      </div>
+                    </td>
+                    <td><strong>{r.name || r.author_name}</strong></td>
+                    <td>{r.created_at || r.date ? new Date(r.created_at || r.date).toLocaleDateString() : 'N/A'}</td>
+                    <td>
+                      <button
+                        type="button"
+                        title="Delete review"
+                        onClick={async () => {
+                          if (confirm('Delete review?')) {
+                            showFlash('Review deleted (API method mocked)');
+                          }
+                        }}
+                        className="admin-action-icon admin-action-icon--danger"
+                      >
+                        <i className="ph ph-trash"></i>
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -2704,6 +2822,7 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                     hover_image_url: modalData.hoverImageUrl || '',
                     description: modalData.description || '',
                     is_active: modalData.is_active ? 1 : 0,
+                    rich_image_sections: modalData.rich_image_sections || [],
                     variants: rows.map((v: any) => ({
                       id: typeof v.id === 'number' ? v.id : undefined,
                       variant_name: (v.variantName || 'Standard').trim(),
@@ -3191,6 +3310,119 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                       })}
                     </tbody>
                   </table>
+                </div>
+              </div>
+
+              {/* SECTION 3: RICH IMAGE SECTIONS */}
+              <div style={{ background: '#fff', border: '1px solid #e1e7e2', borderRadius: '14px', padding: '18px', marginTop: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: '0.85rem', color: '#005c4e', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <i className="ph ph-image"></i> 3. Rich Image Sections (Loop)
+                    </h4>
+                    <small style={{ color: '#77887e', fontSize: '0.65rem' }}>
+                      Add sections of images (1 landscape, 2 portraits) for the product page.
+                    </small>
+                  </div>
+                  <button
+                    type="button"
+                    className="admin-button admin-button--secondary"
+                    style={{ fontSize: '0.68rem', padding: '6px 12px' }}
+                    onClick={() => {
+                      const sections = modalData.rich_image_sections || [];
+                      setModalData({ ...modalData, rich_image_sections: [...sections, { landscape: '', portrait_1: '', portrait_2: '' }] });
+                    }}
+                  >
+                    <i className="ph ph-plus"></i> Add Section
+                  </button>
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {(modalData.rich_image_sections || []).map((sec: any, idx: number) => (
+                    <div key={idx} style={{ padding: '16px', background: '#fbfcfb', border: '1px solid #e1e7e2', borderRadius: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                        <strong>Section {idx + 1}</strong>
+                        <button
+                          type="button"
+                          className="admin-action-icon admin-action-icon--danger"
+                          onClick={() => {
+                            const newSec = [...modalData.rich_image_sections];
+                            newSec.splice(idx, 1);
+                            setModalData({ ...modalData, rich_image_sections: newSec });
+                          }}
+                        >
+                          <i className="ph ph-trash"></i>
+                        </button>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                        {/* Landscape */}
+                        <div>
+                          <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>Landscape Image</label>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {sec.landscape && <img src={sec.landscape} alt="" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />}
+                            <label className="admin-button admin-button--secondary" style={{ padding: '4px 8px', fontSize: '0.7rem', cursor: 'pointer' }}>
+                              <i className="ph ph-upload-simple"></i> Upload
+                              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  handleUploadImage(file, (url) => {
+                                    const newSec = [...modalData.rich_image_sections];
+                                    newSec[idx].landscape = url;
+                                    setModalData({ ...modalData, rich_image_sections: newSec });
+                                  });
+                                }
+                              }} />
+                            </label>
+                          </div>
+                        </div>
+                        {/* Portrait 1 */}
+                        <div>
+                          <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>Portrait 1 (Left)</label>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {sec.portrait_1 && <img src={sec.portrait_1} alt="" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />}
+                            <label className="admin-button admin-button--secondary" style={{ padding: '4px 8px', fontSize: '0.7rem', cursor: 'pointer' }}>
+                              <i className="ph ph-upload-simple"></i> Upload
+                              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  handleUploadImage(file, (url) => {
+                                    const newSec = [...modalData.rich_image_sections];
+                                    newSec[idx].portrait_1 = url;
+                                    setModalData({ ...modalData, rich_image_sections: newSec });
+                                  });
+                                }
+                              }} />
+                            </label>
+                          </div>
+                        </div>
+                        {/* Portrait 2 */}
+                        <div>
+                          <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>Portrait 2 (Right)</label>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {sec.portrait_2 && <img src={sec.portrait_2} alt="" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />}
+                            <label className="admin-button admin-button--secondary" style={{ padding: '4px 8px', fontSize: '0.7rem', cursor: 'pointer' }}>
+                              <i className="ph ph-upload-simple"></i> Upload
+                              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  handleUploadImage(file, (url) => {
+                                    const newSec = [...modalData.rich_image_sections];
+                                    newSec[idx].portrait_2 = url;
+                                    setModalData({ ...modalData, rich_image_sections: newSec });
+                                  });
+                                }
+                              }} />
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {(!modalData.rich_image_sections || modalData.rich_image_sections.length === 0) && (
+                    <div style={{ textAlign: 'center', padding: '24px', background: '#fbfcfb', border: '1px dashed #e1e7e2', borderRadius: '8px', color: '#77887e', fontSize: '0.8rem' }}>
+                      No image sections added yet. Click &quot;Add Section&quot; to begin.
+                    </div>
+                  )}
                 </div>
               </div>
 

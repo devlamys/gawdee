@@ -375,6 +375,14 @@ async def admin_save_item(payload: Dict[str, Any], admin: Dict[str, Any] = Depen
         await sync_item_mirrors(db, new_id)
         saved = await get_item_with_variants(db, new_id, True)
         return {"ok": True, "message": "Item saved successfully", "item_id": new_id, "item": saved}
+    except ValueError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
     finally:
         await db.close()
 

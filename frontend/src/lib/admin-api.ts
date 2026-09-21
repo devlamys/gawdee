@@ -376,6 +376,11 @@ export const adminApi = {
     return adminFetch('/testimonials');
   },
 
+  async getReviews() {
+    // Note: Mocking this until backend endpoint exists, or if it does, it will hit it
+    return adminFetch<{ ok: boolean; reviews: any[] }>('/reviews').catch(() => ({ ok: true, reviews: [] }));
+  },
+
   async saveTestimonial(payload: any) {
     return adminFetch('/testimonials', {
       method: 'POST',

@@ -95,10 +95,10 @@ function NhpProductCard({ item }: { item: CatalogItem }) {
         <div className="nhp-card__rating">
           <div style={{ display: 'flex', gap: '2px' }}>
             <i className="ph-fill ph-star" aria-hidden="true"></i>
-            <i className="ph-fill ph-star" aria-hidden="true"></i>
-            <i className="ph-fill ph-star" aria-hidden="true"></i>
-            <i className="ph-fill ph-star" aria-hidden="true"></i>
-            <i className="ph-fill ph-star" aria-hidden="true"></i>
+            <i className="ph-fill ph-star hide-on-mobile-star" aria-hidden="true"></i>
+            <i className="ph-fill ph-star hide-on-mobile-star" aria-hidden="true"></i>
+            <i className="ph-fill ph-star hide-on-mobile-star" aria-hidden="true"></i>
+            <i className="ph-fill ph-star hide-on-mobile-star" aria-hidden="true"></i>
           </div>
           {rating > 0 ? (
             <>
@@ -114,7 +114,16 @@ function NhpProductCard({ item }: { item: CatalogItem }) {
           <Link href={`/products/${item.slug}`}>{item.name}</Link>
         </h3>
         <p className="nhp-card__pack">{selected.variantName}</p>
-        {item.description && <p className="nhp-card__desc" style={{ fontSize: '0.78rem', color: '#7a8a80', marginTop: '2px', margin: 0 }}>{item.description}</p>}
+        {item.description && (
+          <>
+            <p className="nhp-card__desc nhp-card__desc--desktop" style={{ fontSize: '0.85rem', color: '#7a8a80', marginTop: '2px', margin: 0, textAlign: 'justify' }}>
+              {item.description.length > 300 ? `${item.description.substring(0, 300)}...` : item.description}
+            </p>
+            <p className="nhp-card__desc nhp-card__desc--mobile" style={{ fontSize: '0.85rem', color: '#7a8a80', marginTop: '2px', margin: 0, textAlign: 'justify' }}>
+              {item.description.length > 151 ? `${item.description.substring(0, 151)}...` : item.description}
+            </p>
+          </>
+        )}
 
         <div className="nhp-card__bottom" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 'auto' }}>
           <div className="nhp-card__price-wrap" style={{ display: 'flex', flexDirection: 'column' }}>
@@ -122,11 +131,7 @@ function NhpProductCard({ item }: { item: CatalogItem }) {
               <strong>{money(selected.sellingPrice)}</strong>
               {selected.mrp > selected.sellingPrice && <s>{money(selected.mrp)}</s>}
             </div>
-            {saved > 0 && (
-              <p className="nhp-card__save">
-                You Save {money(saved)}{discount > 0 && ` (${discount}%)`}
-              </p>
-            )}
+
           </div>
 
           {!available ? (
@@ -141,17 +146,7 @@ function NhpProductCard({ item }: { item: CatalogItem }) {
                 onClick={() => openVariantsDrawer(item, variants)}
                 aria-label={`Choose a pack size for ${item.name}`}
               >
-                {selected.variantName} · {money(selected.sellingPrice)} <i className="ph ph-caret-down" aria-hidden="true"></i>
-              </button>
-            </div>
-          ) : cartQty > 0 ? (
-            <div className="nhp-stepper" aria-label={`Quantity of ${item.name} in bag`}>
-              <button type="button" onClick={() => updateQuantity(String(selected.id), -1)} aria-label={`Remove one ${item.name} from bag`}>
-                <i className="ph ph-minus" aria-hidden="true"></i>
-              </button>
-              <strong aria-live="polite">{cartQty}</strong>
-              <button type="button" onClick={() => updateQuantity(String(selected.id), 1)} aria-label={`Add one more ${item.name} to bag`}>
-                <i className="ph ph-plus" aria-hidden="true"></i>
+                <i className="ph ph-shopping-cart-simple" aria-hidden="true"></i> ADD
               </button>
             </div>
           ) : (
