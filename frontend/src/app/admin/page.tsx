@@ -133,6 +133,8 @@ function AdminPageContent() {  const searchParams = useSearchParams();
   const [customerReviews, setCustomerReviews] = useState<any[]>([]);
   const [reels, setReels] = useState<any[]>([]);
   const [offers, setOffers] = useState<any[]>([]);
+  const [combos, setCombos] = useState<any[]>([]);
+  const [comboProducts, setComboProducts] = useState<any[]>([]);
   const [banners, setBanners] = useState<any[]>([]);
   const [bannersTwo, setBannersTwo] = useState<any[]>([]);
   const [testimonials, setTestimonials] = useState<any[]>([]);
@@ -151,6 +153,7 @@ function AdminPageContent() {  const searchParams = useSearchParams();
 
   // Filter state for categories
   const [categorySearch, setCategorySearch] = useState('');
+
 
   // Modal / Form state
   const [activeModal, setActiveModal] = useState<string | null>(null);
@@ -310,6 +313,14 @@ function AdminPageContent() {  const searchParams = useSearchParams();
       } else if (view === 'offers') {
         const res = await adminApi.getOffers();
         if (res?.ok) setOffers(res.offers || []);
+      } else if (view === 'combos') {
+        const [combosRes, itemsRes] = await Promise.all([
+          adminApi.getCombos(),
+          adminApi.getItems().catch(() => null),
+        ]);
+        if (combosRes?.ok) setCombos(combosRes.combos || []);
+        const items = itemsRes?.items || itemsRes?.products || [];
+        setComboProducts(Array.isArray(items) ? items : []);
       } else if (view === 'banners') {
         const res = await adminApi.getBanners();
         if (res?.ok) setBanners(res.banners || []);
@@ -1333,6 +1344,160 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                 ))}
               </tbody>
             </table>
+          </div>
+        </section>
+      )}
+
+      {/* ──────────────────────────────────────────────────────────────────────────
+          5B. COMBOS VIEW (curated bundles for `nhp-combos__grid`)
+          ────────────────────────────────────────────────────────────────────────── */}
+      {view === 'combos' && (
+        <section className="admin-card">
+          <div className="admin-card__head">
+            <div>
+              <h2>Curated Combos ({combos.length})</h2>
+              <p>Manage the “Better Together” bundles on the new homepage. Each combo has its own image, title, category label, two products, description, price and discount.</p>
+            </div>
+            <button
+              className="admin-button admin-button--primary"
+              type="button"
+              onClick={() => {
+                setModalData({
+                  title: '',
+                  category: '',
+                  description: '',
+                  image: '',
+                  product_one_ref: '',
+                  product_two_ref: '',
+                  selling_price: '',
+                  mrp: '',
+                  discount: '',
+                  sort_order: combos.length,
+                  is_active: true,
+                });
+                setActiveModal('combo');
+              }}
+            >
+              <i className="ph ph-plus"></i> Add Combo
+            </button>
+          </div>
+
+          <div className="admin-table-wrap" style={{ marginTop: '1rem' }}>
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Combo</th>
+                  <th>Category</th>
+                  <th>Products</th>
+                  <th>Price</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {combos.map((combo) => (
+                  <tr key={combo.id}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        {combo.image ? (
+                          <img
+                            src={combo.image.startsWith('http') ? combo.image : `/${combo.image.replace(/^\//, '')}`}
+                            alt={combo.title || 'Combo'}
+                            style={{ width: '56px', height: '56px', objectFit: 'cover', borderRadius: '10px', border: '1px solid #e1e7e2', background: '#f6f8f6' }}
+                          />
+                        ) : (
+                          <span style={{ color: '#999', fontSize: '0.8rem' }}>No image</span>
+                        )}
+                        <div>
+                          <strong>{combo.title || 'Untitled combo'}</strong>
+                          {(combo.details || combo.description) && (
+                            <div style={{ color: '#7b8981', fontSize: '0.72rem', marginTop: '4px', maxWidth: '280px' }}>
+                              {(combo.details || combo.description || '').slice(0, 90)}
+                              {(combo.details || combo.description || '').length > 90 ? '…' : ''}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td>{combo.category || '—'}</td>
+                    <td style={{ fontSize: '0.74rem', maxWidth: '240px' }}>
+                      <div>1. {combo.productOne?.name || combo.product_one?.name || combo.product_one_ref || '—'}</div>
+                      <div>2. {combo.productTwo?.name || combo.product_two?.name || combo.product_two_ref || '—'}</div>
+                    </td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <strong>{money(Number(combo.sellingPrice ?? combo.selling_price ?? 0) || 0)}</strong>
+                      {Number(combo.mrp) > Number(combo.sellingPrice ?? combo.selling_price ?? 0) && (
+                        <div style={{ fontSize: '0.72rem', color: '#7b8981' }}>
+                          <s>{money(Number(combo.mrp) || 0)}</s> · SAVE {Number(combo.savePercent ?? combo.save_percent ?? 0) || 0}%
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className={`status-pill ${combo.is_active || combo.isActive ? 'status-pill--paid' : ''}`}
+                        title="Toggle visibility"
+                        onClick={async () => {
+                          try {
+                            await adminApi.toggleCombo(combo.id);
+                            loadViewData();
+                          } catch (err: any) {
+                            showFlash(err.message || 'Failed to toggle combo', 'error');
+                          }
+                        }}
+                      >
+                        {combo.is_active || combo.isActive ? 'Active' : 'Hidden'}
+                      </button>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button
+                          type="button"
+                          title="Edit combo"
+                          onClick={() => {
+                            setModalData({
+                              ...combo,
+                              selling_price: combo.sellingPrice ?? combo.selling_price ?? '',
+                              mrp: combo.mrp ?? '',
+                              discount: combo.discount ?? '',
+                              product_one_ref: combo.productOneRef || combo.product_one_ref || '',
+                              product_two_ref: combo.productTwoRef || combo.product_two_ref || '',
+                            });
+                            setActiveModal('combo');
+                          }}
+                          className="admin-action-icon"
+                        >
+                          <i className="ph ph-pencil-simple"></i>
+                        </button>
+                        <button
+                          type="button"
+                          title="Delete combo"
+                          onClick={async () => {
+                            if (confirm('Delete this combo? It will disappear from the homepage.')) {
+                              try {
+                                await adminApi.deleteCombo(combo.id);
+                                showFlash('Combo deleted');
+                                loadViewData();
+                              } catch (err: any) {
+                                showFlash(err.message || 'Failed to delete combo', 'error');
+                              }
+                            }
+                          }}
+                          className="admin-action-icon admin-action-icon--danger"
+                        >
+                          <i className="ph ph-trash"></i>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {combos.length === 0 && (
+              <p style={{ color: '#7b8981', fontSize: '0.8rem', padding: '12px 4px' }}>
+                No combos yet — click “Add Combo” to create the first bundle for the homepage grid.
+              </p>
+            )}
           </div>
         </section>
       )}
@@ -2737,6 +2902,277 @@ function AdminPageContent() {  const searchParams = useSearchParams();
       )}
 
       {/* ──────────────────────────────────────────────────────────────────────────
+          MODAL: ADD / EDIT COMBO
+          ────────────────────────────────────────────────────────────────────────── */}
+      {activeModal === 'combo' && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.6)',
+            zIndex: 99999,
+            display: 'grid',
+            placeItems: 'center',
+            padding: '20px',
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '20px',
+              maxWidth: '640px',
+              width: '100%',
+              maxHeight: '92vh',
+              overflowY: 'auto',
+              padding: '28px',
+              boxShadow: '0 25px 60px rgba(0,0,0,0.22)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '14px', borderBottom: '1px solid #e1e7e2' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#005c4e' }}>
+                  {modalData.id ? `Edit Combo: ${modalData.title}` : 'New Combo'}
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '0.72rem', color: '#7b8981' }}>
+                  Shows in the homepage “Better Together” grid (.nhp-combos__grid).
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveModal(null)}
+                style={{ background: '#f0f4f2', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'grid', placeItems: 'center', fontSize: '1.1rem', cursor: 'pointer', color: '#445', flexShrink: 0 }}
+              >
+                <i className="ph ph-x"></i>
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  const title = (modalData.title || '').trim();
+                  if (!title) throw new Error('Combo title is required.');
+                  if (!((modalData.image || '').trim())) throw new Error('Upload a combo image first.');
+                  if (!modalData.product_one_ref) throw new Error('Select the first product.');
+                  if (!modalData.product_two_ref) throw new Error('Select the second product.');
+                  const numOrUnset = (v: any) => (v === '' || v === null || v === undefined ? undefined : Number(v));
+                  await adminApi.saveCombo({
+                    id: modalData.id || undefined,
+                    title,
+                    category: (modalData.category || '').trim(),
+                    description: modalData.description || '',
+                    image: (modalData.image || '').trim(),
+                    product_one_ref: String(modalData.product_one_ref),
+                    product_two_ref: String(modalData.product_two_ref),
+                    selling_price: numOrUnset(modalData.selling_price),
+                    mrp: numOrUnset(modalData.mrp),
+                    discount: numOrUnset(modalData.discount),
+                    sort_order: Math.max(0, parseInt(modalData.sort_order ?? 0) || 0),
+                    is_active: modalData.is_active !== false,
+                  });
+                  showFlash(modalData.id ? 'Combo updated successfully' : 'Combo created successfully');
+                  setActiveModal(null);
+                  loadViewData();
+                } catch (err) {
+                  showFlash(err instanceof Error ? err.message : 'Failed to save combo', 'error');
+                }
+              }}
+              className="admin-form"
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <label>
+                  <span>Combo image *</span>
+                  {modalData.image && (
+                    <img
+                      src={String(modalData.image).startsWith('http') ? modalData.image : `/${String(modalData.image).replace(/^\//, '')}`}
+                      alt="Combo preview"
+                      style={{ width: '100%', height: '160px', objectFit: 'cover', borderRadius: '12px', border: '1px solid #e1e7e2', background: '#f6f8f6', marginBottom: '8px' }}
+                    />
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="text"
+                      placeholder="/assets/uploads/combos/... or upload"
+                      value={modalData.image || ''}
+                      onChange={(e) => setModalData({ ...modalData, image: e.target.value })}
+                      style={{ flex: 1 }}
+                    />
+                    <label
+                      className="admin-button admin-button--ghost"
+                      style={{ whiteSpace: 'nowrap', cursor: 'pointer', padding: '9px 12px' }}
+                    >
+                      <i className="ph ph-upload-simple"></i> Upload
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleUploadImage(file, (url) => {
+                              setModalData((prev: any) => ({ ...prev, image: url }));
+                            }, 'combos');
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </label>
+
+                <label>
+                  <span>Combo title *</span>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Raw Forest Honey (350g) + Jaggery Powder (1 kg)"
+                    value={modalData.title || ''}
+                    onChange={(e) => setModalData({ ...modalData, title: e.target.value })}
+                  />
+                </label>
+
+                <label>
+                  <span>Category label <small style={{ color: '#7b8981' }}>(.nhp-combo__category eyebrow)</small></span>
+                  <input
+                    type="text"
+                    placeholder="e.g. EVERYDAY SWEETENING DUO"
+                    value={modalData.category || ''}
+                    onChange={(e) => setModalData({ ...modalData, category: e.target.value })}
+                  />
+                </label>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <label>
+                    <span>First product *</span>
+                    <select
+                      value={modalData.product_one_ref || ''}
+                      onChange={(e) => setModalData({ ...modalData, product_one_ref: e.target.value })}
+                    >
+                      <option value="">Select product…</option>
+                      {(comboProducts || []).flatMap((item: any) =>
+                        (item.variants || []).map((v: any) => {
+                          const price = v.selling_price ?? v.sellingPrice ?? v.price ?? 0;
+                          return (
+                            <option key={`one-${v.id}`} value={String(v.id)}>
+                              {item.name} — {v.variant_name || v.variantName || 'Standard'} (₹{price})
+                            </option>
+                          );
+                        })
+                      )}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Second product *</span>
+                    <select
+                      value={modalData.product_two_ref || ''}
+                      onChange={(e) => setModalData({ ...modalData, product_two_ref: e.target.value })}
+                    >
+                      <option value="">Select product…</option>
+                      {(comboProducts || []).flatMap((item: any) =>
+                        (item.variants || []).map((v: any) => {
+                          const price = v.selling_price ?? v.sellingPrice ?? v.price ?? 0;
+                          return (
+                            <option key={`two-${v.id}`} value={String(v.id)}>
+                              {item.name} — {v.variant_name || v.variantName || 'Standard'} (₹{price})
+                            </option>
+                          );
+                        })
+                      )}
+                    </select>
+                  </label>
+                </div>
+
+                <label>
+                  <span>Description</span>
+                  <textarea
+                    rows={3}
+                    placeholder="Short bundle description shown under the title"
+                    value={modalData.description || ''}
+                    onChange={(e) => setModalData({ ...modalData, description: e.target.value })}
+                  />
+                </label>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
+                  <label>
+                    <span>Price (₹) *</span>
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="e.g. 490"
+                      value={modalData.selling_price ?? ''}
+                      onChange={(e) => setModalData({ ...modalData, selling_price: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>MRP (₹)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="e.g. 598"
+                      value={modalData.mrp ?? ''}
+                      onChange={(e) => setModalData({ ...modalData, mrp: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>Discount (%)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={90}
+                      step="0.01"
+                      placeholder="e.g. 18"
+                      value={modalData.discount ?? ''}
+                      onChange={(e) => setModalData({ ...modalData, discount: e.target.value })}
+                    />
+                  </label>
+                </div>
+                <p style={{ margin: 0, fontSize: '0.7rem', color: '#7b8981' }}>
+                  The SAVE % badge is computed by the backend from Price vs MRP. Leave Price empty and enter MRP + Discount to derive the price automatically.
+                </p>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <label>
+                    <span>Sort Order</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={modalData.sort_order ?? 0}
+                      onChange={(e) => setModalData({ ...modalData, sort_order: parseInt(e.target.value) || 0 })}
+                    />
+                  </label>
+                  <label className="form-switch" style={{ padding: 0, alignSelf: 'end', paddingBottom: '10px' }}>
+                    <input
+                      type="checkbox"
+                      checked={modalData.is_active !== false}
+                      onChange={(e) => setModalData({ ...modalData, is_active: e.target.checked })}
+                    />
+                    <span>Combo is visible in storefront</span>
+                  </label>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                <button
+                  type="button"
+                  className="admin-button admin-button--ghost"
+                  onClick={() => setActiveModal(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="admin-button admin-button--primary"
+                  disabled={uploadingImage}
+                >
+                  <i className="ph ph-check"></i> {modalData.id ? 'Update Combo' : 'Create Combo'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ──────────────────────────────────────────────────────────────────────────
           MODAL: ADD PRODUCT / VARIANT
           ────────────────────────────────────────────────────────────────────────── */}
       {activeModal === 'product' && (
@@ -3058,18 +3494,20 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                         variants: [
                           ...(modalData.variants || []),
                           {
-                            variant_name: defaultName,
+                            variantName: defaultName,
                             sku: '',
-                            stock_quantity: 0,
+                            stock: 0,
                             mrp: 0,
+                            sellingPrice: 0,
                             discount: 0,
-                            selling_price: 0,
-                            is_inclusive_tax: true,
+                            uom: '',
+                            isInclusive: true,
                             // Mirrors DB DEFAULT 1 for new variants; persisted rows load real values.
                             isLabTested: true,
                             isNatural: true,
-                            is_active: true,
+                            isActive: true,
                             image: '',
+                            images: [],
                           },
                         ],
                       });

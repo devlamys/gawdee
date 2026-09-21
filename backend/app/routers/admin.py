@@ -35,6 +35,11 @@ from ..database import (
     delete_variant_image,
     sync_item_mirrors,
     sync_variant_mirror,
+    get_combos,
+    get_combo_by_id,
+    create_combo,
+    update_combo,
+    delete_combo,
 )
 from ..core.config import settings
 
@@ -718,6 +723,118 @@ async def admin_save_offer(payload: SaveOfferPayload, admin: Dict[str, Any] = De
 async def admin_delete_offer(offer_id: int, admin: Dict[str, Any] = Depends(get_current_admin)):
     await execute("DELETE FROM offers WHERE id = ?", (offer_id,))
     return {"ok": True, "message": "Offer deleted"}
+
+
+# ── Combos Manager (curated bundles for `nhp-combos__grid`) ─────────────────
+
+@router.get("/combos")
+async def admin_get_combos(admin: Dict[str, Any] = Depends(get_current_admin)):
+    db = await get_db()
+    try:
+        return {"ok": True, "combos": await get_combos(db, include_inactive=True)}
+    finally:
+        await db.close()
+
+class SaveComboPayload(BaseModel):
+    id: Optional[int] = None
+    title: str
+    slug: Optional[str] = ""
+    # `nhp-combo__category` eyebrow label (e.g. EVERYDAY SWEETENING DUO)
+    category: Optional[str] = ""
+    description: Optional[str] = ""
+    details: Optional[str] = None
+    image: Optional[str] = ""
+    product_one_ref: Optional[str] = None
+    productOneRef: Optional[str] = None
+    product_two_ref: Optional[str] = None
+    productTwoRef: Optional[str] = None
+    selling_price: Optional[int] = None
+    price: Optional[int] = None
+    mrp: Optional[int] = None
+    original_price: Optional[int] = None
+    discount: Optional[float] = None
+    discount_percent: Optional[float] = None
+    sort_order: Optional[int] = 0
+    sortOrder: Optional[int] = None
+    is_active: Optional[bool] = None
+    isActive: Optional[bool] = None
+
+@router.post("/combos")
+async def admin_save_combo(payload: SaveComboPayload, admin: Dict[str, Any] = Depends(get_current_admin)):
+    data = payload.model_dump(exclude_unset=True)
+    # camelCase aliases accepted from the admin UI; snake_case wins on conflict.
+    if "productOneRef" in data and "product_one_ref" not in data:
+        data["product_one_ref"] = data.pop("productOneRef")
+    else:
+        data.pop("productOneRef", None)
+    if "productTwoRef" in data and "product_two_ref" not in data:
+        data["product_two_ref"] = data.pop("productTwoRef")
+    else:
+        data.pop("productTwoRef", None)
+    if data.get("details") and not data.get("description"):
+        data["description"] = data["details"]
+    data.pop("details", None)
+    if data.get("price") is not None and data.get("selling_price") is None:
+        data["selling_price"] = data["price"]
+    data.pop("price", None)
+    if data.get("original_price") is not None and data.get("mrp") is None:
+        data["mrp"] = data["original_price"]
+    data.pop("original_price", None)
+    if data.get("discount_percent") is not None and data.get("discount") is None:
+        data["discount"] = data["discount_percent"]
+    data.pop("discount_percent", None)
+    if data.get("sortOrder") is not None and not data.get("sort_order"):
+        data["sort_order"] = data["sortOrder"]
+    data.pop("sortOrder", None)
+    if data.get("isActive") is not None and data.get("is_active") is None:
+        data["is_active"] = data["isActive"]
+    data.pop("isActive", None)
+
+    db = await get_db()
+    try:
+        combo_id = data.pop("id", None)
+        if combo_id:
+            try:
+                await update_combo(db, int(combo_id), data)
+            except ValueError as e:
+                raise HTTPException(status_code=422, detail=str(e))
+            saved = await get_combo_by_id(db, int(combo_id), include_inactive=True)
+            return {"ok": True, "message": "Combo updated successfully", "combo_id": int(combo_id), "combo": saved}
+        try:
+            new_id = await create_combo(db, data)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        saved = await get_combo_by_id(db, new_id, include_inactive=True)
+        return {"ok": True, "message": "Combo created successfully", "combo_id": new_id, "combo": saved}
+    finally:
+        await db.close()
+
+@router.post("/combos/{combo_id}/toggle")
+async def admin_toggle_combo(combo_id: int, admin: Dict[str, Any] = Depends(get_current_admin)):
+    db = await get_db()
+    try:
+        combo = await get_combo_by_id(db, combo_id, include_inactive=True)
+        if not combo:
+            raise HTTPException(status_code=404, detail="Combo not found")
+        await update_combo(db, combo_id, {"is_active": not bool(combo.get("is_active"))})
+        saved = await get_combo_by_id(db, combo_id, include_inactive=True)
+        return {"ok": True, "is_active": saved["is_active"] if saved else 0}
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    finally:
+        await db.close()
+
+@router.delete("/combos/{combo_id}")
+async def admin_delete_combo(combo_id: int, admin: Dict[str, Any] = Depends(get_current_admin)):
+    db = await get_db()
+    try:
+        try:
+            await delete_combo(db, combo_id)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        return {"ok": True, "message": "Combo deleted"}
+    finally:
+        await db.close()
 
 
 # ── Banners & Banners Two ───────────────────────────────────────────────────

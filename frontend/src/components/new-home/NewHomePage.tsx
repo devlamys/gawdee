@@ -33,7 +33,7 @@ export function NewHomePage(props: NewHomePageProps) {
       <NhpShopByNeed items={items} />
       <NhpLabTested />
       <NhpCertifications />
-      <NhpCombos />
+      <NhpCombos items={items} />
       <NhpTrustReviews testimonials={testimonials} />
       <NhpFaq />
     </>

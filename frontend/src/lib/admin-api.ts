@@ -484,6 +484,30 @@ export const adminApi = {
     });
   },
 
+  // Combos (curated bundles for `nhp-combos__grid`)
+  async getCombos() {
+    return adminFetch('/combos');
+  },
+
+  async saveCombo(payload: any) {
+    return adminFetch('/combos', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async toggleCombo(comboId: number) {
+    return adminFetch(`/combos/${comboId}/toggle`, {
+      method: 'POST',
+    });
+  },
+
+  async deleteCombo(comboId: number) {
+    return adminFetch(`/combos/${comboId}`, {
+      method: 'DELETE',
+    });
+  },
+
   // Settings
   async getSettings() {
     return adminFetch('/settings');

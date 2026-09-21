@@ -10,62 +10,54 @@ import { money, resolveImageUrl } from '@/lib/utils';
 import { normalizeCategory } from '@/lib/products-data';
 import {
   categoryIcon,
-  firstValidVariant,
   isVariantAvailable,
-  itemCardImage,
-  itemHoverImage,
+  variantCardImages,
   variantCartLine,
   variantDiscountPercent,
 } from '@/lib/catalog';
 
 function CatalogProductCardItem({
   item,
+  variant,
   index,
 }: {
   item: CatalogItem;
+  variant: CatalogVariant;
   index: number;
 }) {
-  const variants = item.variants ?? [];
-  const [selectedId, setSelectedId] = useState<number | null>(
-    () => firstValidVariant(item)?.id ?? null
-  );
-  const { addItem, openVariantsDrawer } = useCart();
+  const { addItem } = useCart();
 
-  const selected = variants.find((v) => v.id === selectedId) ?? firstValidVariant(item);
-  const isMultiVariant = variants.length > 1;
+  // One card per variant: this card is fixed to its own variant.
+  const selected = variant;
 
   const searchKeywords = (
     `${item.name} ${item.category} ${item.tag || ''} ${item.description || ''} ` +
-    variants.map((v) => `${v.variantName} ${v.sku} ${v.uom}`).join(' ')
+    `${variant.variantName} ${variant.sku} ${variant.uom}`
   ).toLowerCase();
 
   const discount = variantDiscountPercent(selected);
   const available = isVariantAvailable(selected);
-  // Listing imagery is strictly item-level (ImageUrl, hover swap).
-  // Variant imagery belongs to the detail gallery only.
-  const mainImage = itemCardImage(item);
-  const hoverImage = itemHoverImage(item);
+  // Listing imagery follows the selected variant: first gallery image shows
+  // by default, second image swaps in on hover (backend imagePreview order).
+  const [firstImage, secondImage] = variantCardImages(item, selected);
   const [hovered, setHovered] = useState(false);
-  const shownImage = hovered && hoverImage ? hoverImage : mainImage;
+  const shownImage = hovered && secondImage ? secondImage : firstImage;
 
   const handleAdd = () => {
     if (!selected || !available) return;
-    if (isMultiVariant) {
-      openVariantsDrawer(item, variants);
-    } else {
-      addItem(variantCartLine(item, selected), 1, true);
-    }
+    addItem(variantCartLine(item, selected), 1, true);
   };
 
   return (
     <article
-      className="product-card catalog-product-card reveal is-visible"
+      className="product-card catalog-product-card nhp-combo reveal is-visible"
+      style={{ width: '100%', flex: 'none', scrollSnapAlign: 'none', minWidth: 'auto', margin: 0 }}
       data-delay={(index % 4) * 40}
       data-category={item.categoryKey || item.category?.toLowerCase()}
       data-search-name={searchKeywords}
     >
       <Link
-        className="product-card__media"
+        className="nhp-combo__media"
         href={`/products/${item.slug}`}
         style={{ '--product-accent': item.accent || '#d8a934' } as React.CSSProperties}
         onMouseEnter={() => setHovered(true)}
@@ -83,21 +75,30 @@ function CatalogProductCardItem({
           loading="lazy"
         />
       </Link>
-      <div className="product-card__body">
-        <div className="product-card__meta">
-          <span>{item.category}</span>
-          <span>·</span>
-          <span>{selected?.variantName || ''}</span>
-        </div>
-        <h3>
+      <div className="nhp-combo__body">
+        <p className="nhp-combo__category">
+          {item.category} {selected?.variantName ? `· ${selected.variantName}` : ''}
+        </p>
+        <h3 className="nhp-combo__title">
           <Link href={`/products/${item.slug}`}>
             {item.name}
           </Link>
         </h3>
         {item.description && (
-          <p className="catalog-product-card__copy">{item.description}</p>
+          <p className="nhp-combo__desc">
+            <span className="nhp-combo__desc--desktop">
+              {item.description.length > 434
+                ? item.description.substring(0, 434) + '...'
+                : item.description}
+            </span>
+            <span className="nhp-combo__desc--mobile">
+              {item.description.length > 205
+                ? item.description.substring(0, 205) + '...'
+                : item.description}
+            </span>
+          </p>
         )}
-        <div className="catalog-product-card__rating">
+        <div className="catalog-product-card__rating" style={{ marginBottom: '12px' }}>
           <span className="stars" aria-hidden="true">★★★★★</span>
           {Number(item.rating) > 0 ? (
             <>
@@ -111,47 +112,29 @@ function CatalogProductCardItem({
             </>
           )}
         </div>
-        {isMultiVariant && (
-          <div className="card-variant-pills" aria-label="Select pack size">
-            {variants.map((cv: CatalogVariant) => {
-              const isCur = selected != null && cv.id === selected.id;
-              const cvAvailable = isVariantAvailable(cv);
-              return (
-                <button
-                  key={cv.id}
-                  type="button"
-                  className={`card-variant-pill ${isCur ? 'is-active' : ''}`}
-                  onClick={() => setSelectedId(cv.id)}
-                  aria-pressed={isCur}
-                  aria-label={`${cv.variantName}, ${money(cv.sellingPrice)}${cvAvailable ? '' : ', sold out'}`}
-                >
-                  {cv.variantName}
-                </button>
-              );
-            })}
-          </div>
-        )}
-        <div className="product-card__buy">
-          <div className="product-card__price">
-            {selected ? (
-              <>
-                <strong>{money(selected.sellingPrice)}</strong>
-                {selected.mrp > selected.sellingPrice && (
-                  <s>{money(selected.mrp)}</s>
-                )}
-              </>
-            ) : (
-              <strong style={{ color: '#999', fontSize: '0.9rem' }}>Unavailable</strong>
-            )}
+        <div className="nhp-combo__footer">
+          <div className="nhp-combo__meta">
+            <div className="nhp-combo__price">
+              {selected ? (
+                <>
+                  <strong>{money(selected.sellingPrice)}</strong>
+                  {selected.mrp > selected.sellingPrice && (
+                    <s>{money(selected.mrp)}</s>
+                  )}
+                </>
+              ) : (
+                <strong style={{ color: '#999', fontSize: '0.9rem' }}>Unavailable</strong>
+              )}
+            </div>
           </div>
           <button
-            className="add-button"
+            className="nhp-combo__add"
             type="button"
             onClick={handleAdd}
             disabled={!available}
             aria-label={selected ? `Add ${item.name} ${selected.variantName} to cart` : `Add ${item.name} to cart`}
           >
-            <span>{!available ? 'Out of stock' : 'Add to cart'}</span>
+            <i className="ph ph-shopping-cart-simple" aria-hidden="true"></i> {!available ? 'Out of stock' : 'ADD'}
           </button>
         </div>
       </div>
@@ -266,6 +249,17 @@ function CatalogContent() {
     });
   }, [items, visibleKeys, searchQuery]);
 
+  // One card per variant: an item with 3 variants lists 3 products.
+  const variantCards = useMemo(() => {
+    const out: { item: CatalogItem; variant: CatalogVariant }[] = [];
+    for (const item of filteredItems) {
+      for (const v of item.variants ?? []) {
+        out.push({ item, variant: v });
+      }
+    }
+    return out;
+  }, [filteredItems]);
+
   const handleFilterClick = (key: string) => {
     setActiveCategory(key);
     const targetUrl = key === 'all' ? '/products' : `/products?category=${key}`;
@@ -324,7 +318,7 @@ function CatalogContent() {
             <i className="ph ph-shield-check"></i> 100% Certified Authentic
           </span>
           <span data-catalog-count style={{ fontSize: '0.9rem', color: 'var(--muted)' }}>
-            {filteredItems.length} item{filteredItems.length === 1 ? '' : 's'}
+            {variantCards.length} product{variantCards.length === 1 ? '' : 's'}
           </span>
         </div>
 
@@ -340,7 +334,7 @@ function CatalogContent() {
             <h2>Unable to load products</h2>
             <p>{loadError}</p>
           </div>
-        ) : filteredItems.length === 0 ? (
+        ) : variantCards.length === 0 ? (
           <div className="product-empty catalog-empty" data-product-empty>
             <i className="ph ph-magnifying-glass"></i>
             <h2>{items.length === 0 ? 'No products available.' : 'No matching products found'}</h2>
@@ -352,8 +346,8 @@ function CatalogContent() {
             data-product-grid
             data-initial-category={activeCategory}
           >
-            {filteredItems.map((item, idx) => (
-              <CatalogProductCardItem key={item.id} item={item} index={idx} />
+            {variantCards.map(({ item, variant }, idx) => (
+              <CatalogProductCardItem key={variant.id} item={item} variant={variant} index={idx} />
             ))}
           </div>
         )}
