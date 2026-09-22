@@ -11,7 +11,7 @@ import base64
 import secrets
 import re
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Any
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .core.config import settings

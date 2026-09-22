@@ -169,7 +169,7 @@ function NhpProductCard({ item }: { item: CatalogItem }) {
         {item.description && (
           <>
             <p className="nhp-card__desc nhp-card__desc--desktop" style={{ fontSize: '0.85rem', color: '#7a8a80', marginTop: '2px', margin: 0, textAlign: 'justify' }}>
-              {item.description.length > 200 ? `${item.description.substring(0, 200)}...` : item.description}
+              {item.description.length > 136 ? `${item.description.substring(0, 136)}...` : item.description}
             </p>
             <p className="nhp-card__desc nhp-card__desc--mobile" style={{ fontSize: '0.85rem', color: '#7a8a80', marginTop: '2px', margin: 0, textAlign: 'justify' }}>
               {item.description.length > 100 ? `${item.description.substring(0, 100)}...` : item.description}
@@ -267,8 +267,8 @@ function NhpExploreComboCard({ combo }: { combo: Combo }) {
         </h3>
         {(combo.details || combo.description) && (
           <p className="nhp-card__desc nhp-card__desc--desktop" style={{ fontSize: '0.85rem', color: '#7a8a80', marginTop: '2px', margin: 0, textAlign: 'justify' }}>
-            {(combo.details || combo.description).length > 200
-              ? `${(combo.details || combo.description).substring(0, 200)}...`
+            {(combo.details || combo.description).length > 136
+              ? `${(combo.details || combo.description).substring(0, 136)}...`
               : (combo.details || combo.description)}
           </p>
         )}

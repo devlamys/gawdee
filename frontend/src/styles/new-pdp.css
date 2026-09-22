@@ -55,6 +55,16 @@
   object-fit: contain;
 }
 
+.pv-gallery__empty {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background: #f4f6f4;
+  color: #b9c6bd;
+  font-size: 3rem;
+}
+
 .pv-gallery__badge {
   position: absolute;
   top: 24px;

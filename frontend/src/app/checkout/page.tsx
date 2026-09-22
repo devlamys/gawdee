@@ -92,6 +92,13 @@ export default function CheckoutPage() {
   const [razorpayAvailable, setRazorpayAvailable] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  // Stale cart entries can point at removed uploads — swap dead thumbnails to
+  // the logo, and hide the img entirely if even the fallback fails.
+  const [deadImgs, setDeadImgs] = useState<string[]>([]);
+  const markImgDead = (src: string) => {
+    if (!src) return;
+    setDeadImgs((prev) => (prev.includes(src) ? prev : [...prev, src]));
+  };
 
   // Autofill customer details if logged in
   useEffect(() => {
@@ -339,105 +346,94 @@ export default function CheckoutPage() {
 
           <div className="checkout-grid">
             {/* Form */}
-            <form className="checkout-form" onSubmit={handleSubmitOrder} style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+            <form className="checkout-form" onSubmit={handleSubmitOrder}>
               {/* Step 1: Contact */}
-              <section className="checkout-card" style={{ background: '#fff', border: '1px solid #eee', borderRadius: '16px', padding: '1.8rem' }}>
-                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1.5rem' }}>
-                  <span style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#009a84', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.9rem' }}>
-                    01
-                  </span>
+              <section className="checkout-card">
+                <div className="checkout-card__heading">
+                  <span>01</span>
                   <div>
-                    <h2 style={{ fontSize: '1.2rem', margin: 0 }}>Contact Details</h2>
-                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#777' }}>For order and delivery notifications</p>
+                    <h2>Contact Details</h2>
+                    <p>For order and delivery notifications</p>
                   </div>
                 </div>
 
-                <div className="form-grid-2col">
-                  <label style={{ gridColumn: 'span 2' }}>
-                    <span style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>Full name *</span>
+                <div className="checkout-fields">
+                  <label className="checkout-span-2">
+                    <span>Full name *</span>
                     <input
                       required
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      style={{ width: '100%', padding: '0.65rem 0.8rem', border: '1px solid #ccc', borderRadius: '8px' }}
                     />
                   </label>
                   <label>
-                    <span style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>Email address *</span>
+                    <span>Email address *</span>
                     <input
                       type="email"
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      style={{ width: '100%', padding: '0.65rem 0.8rem', border: '1px solid #ccc', borderRadius: '8px' }}
                     />
                   </label>
                   <label>
-                    <span style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>Phone number *</span>
+                    <span>Phone number *</span>
                     <input
                       type="tel"
                       required
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                       placeholder="e.g. 9876543210"
-                      style={{ width: '100%', padding: '0.65rem 0.8rem', border: '1px solid #ccc', borderRadius: '8px' }}
                     />
                   </label>
                 </div>
               </section>
 
               {/* Step 2: Address */}
-              <section className="checkout-card" style={{ background: '#fff', border: '1px solid #eee', borderRadius: '16px', padding: '1.8rem' }}>
-                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1.5rem' }}>
-                  <span style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#009a84', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.9rem' }}>
-                    02
-                  </span>
+              <section className="checkout-card">
+                <div className="checkout-card__heading">
+                  <span>02</span>
                   <div>
-                    <h2 style={{ fontSize: '1.2rem', margin: 0 }}>Delivery Address</h2>
-                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#777' }}>Currently shipping pan-India</p>
+                    <h2>Delivery Address</h2>
+                    <p>Currently shipping pan-India</p>
                   </div>
                 </div>
 
-                <div className="form-grid-2col">
-                  <label style={{ gridColumn: 'span 2' }}>
-                    <span style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>Address Line 1 *</span>
+                <div className="checkout-fields">
+                  <label className="checkout-span-2">
+                    <span>Address Line 1 *</span>
                     <input
                       required
                       value={address1}
                       onChange={(e) => setAddress1(e.target.value)}
                       placeholder="Flat, house no., apartment, street"
-                      style={{ width: '100%', padding: '0.65rem 0.8rem', border: '1px solid #ccc', borderRadius: '8px' }}
                     />
                   </label>
-                  <label style={{ gridColumn: 'span 2' }}>
-                    <span style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>Address Line 2 (Optional)</span>
+                  <label className="checkout-span-2">
+                    <span>Address Line 2 (Optional)</span>
                     <input
                       value={address2}
                       onChange={(e) => setAddress2(e.target.value)}
                       placeholder="Landmark, area"
-                      style={{ width: '100%', padding: '0.65rem 0.8rem', border: '1px solid #ccc', borderRadius: '8px' }}
                     />
                   </label>
                   <label>
-                    <span style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>City *</span>
+                    <span>City *</span>
                     <input
                       required
                       value={city}
                       onChange={(e) => setCity(e.target.value)}
-                      style={{ width: '100%', padding: '0.65rem 0.8rem', border: '1px solid #ccc', borderRadius: '8px' }}
                     />
                   </label>
                   <label>
-                    <span style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>State *</span>
+                    <span>State *</span>
                     <input
                       required
                       value={state}
                       onChange={(e) => setState(e.target.value)}
-                      style={{ width: '100%', padding: '0.65rem 0.8rem', border: '1px solid #ccc', borderRadius: '8px' }}
                     />
                   </label>
                   <label>
-                    <span style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>6-Digit Pincode *</span>
+                    <span>6-Digit Pincode *</span>
                     <input
                       required
                       pattern="[1-9][0-9]{5}"
@@ -445,37 +441,33 @@ export default function CheckoutPage() {
                       value={pincode}
                       onChange={(e) => setPincode(e.target.value)}
                       placeholder="e.g. 560001"
-                      style={{ width: '100%', padding: '0.65rem 0.8rem', border: '1px solid #ccc', borderRadius: '8px' }}
                     />
                   </label>
                   <label>
-                    <span style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>Order Note (Optional)</span>
+                    <span>Order Note (Optional)</span>
                     <input
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
                       placeholder="Delivery instructions"
-                      style={{ width: '100%', padding: '0.65rem 0.8rem', border: '1px solid #ccc', borderRadius: '8px' }}
                     />
                   </label>
                 </div>
               </section>
 
               {/* Step 3: Offer & Payment */}
-              <section className="checkout-card" style={{ background: '#fff', border: '1px solid #eee', borderRadius: '16px', padding: '1.8rem' }}>
-                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1.5rem' }}>
-                  <span style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#009a84', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.9rem' }}>
-                    03
-                  </span>
+              <section className="checkout-card">
+                <div className="checkout-card__heading">
+                  <span>03</span>
                   <div>
-                    <h2 style={{ fontSize: '1.2rem', margin: 0 }}>Offer &amp; Payment Method</h2>
-                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#777' }}>Choose how you’d like to pay</p>
+                    <h2>Offer &amp; Payment Method</h2>
+                    <p>Choose how you’d like to pay</p>
                   </div>
                 </div>
 
                 {/* Promo code */}
-                <div style={{ marginBottom: '1.5rem', background: '#fafbfa', padding: '1rem', borderRadius: '12px', border: '1px solid #edf2ec' }}>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.4rem' }}>Have an offer code?</label>
-                  <div style={{ display: 'flex', gap: '0.6rem' }}>
+                <div className="checkout-coupon">
+                  <label><span>Have an offer code?</span></label>
+                  <div className="checkout-coupon__input">
                     <input
                       value={couponCode}
                       onChange={(e) => setCouponCode(e.target.value)}
@@ -486,43 +478,37 @@ export default function CheckoutPage() {
                         }
                       }}
                       placeholder={activeOfferCode ? `e.g. ${activeOfferCode}` : 'Enter offer code'}
-                      style={{ flex: 1, padding: '0.5rem 0.8rem', border: '1px solid #ccc', borderRadius: '8px', textTransform: 'uppercase' }}
                     />
-                    <button
-                      type="button"
-                      onClick={handleApplyCoupon}
-                      className="button button--secondary"
-                      style={{ padding: '0 1.2rem', minHeight: '38px', height: '38px', lineHeight: '1', fontSize: '0.85rem' }}
-                    >
+                    <button type="button" onClick={handleApplyCoupon}>
                       Apply
                     </button>
                   </div>
                   {appliedCoupon && (
-                    <small style={{ color: '#009a84', display: 'block', marginTop: '0.4rem', fontWeight: 600 }}>
+                    <small style={{ color: '#009a84' }}>
                       <i className="ph ph-check"></i> Code {appliedCoupon} applied! ({discountPercent}% off)
                     </small>
                   )}
                   {couponError && (
-                    <small style={{ color: '#d9534f', display: 'block', marginTop: '0.4rem' }}>{couponError}</small>
+                    <small style={{ color: '#d9534f' }}>{couponError}</small>
                   )}
                 </div>
 
                 {customer ? (
-                  <div style={{ marginBottom: '1.5rem', background: '#f4faf8', padding: '1rem', borderRadius: '12px', border: '1px solid #d9ede7' }}>
-                    <strong style={{ display: 'block', marginBottom: '0.3rem' }}>Use Loyalty Coins</strong>
-                    <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: '#555' }}>
+                  <div className="checkout-loyalty">
+                    <strong>Use Loyalty Coins</strong>
+                    <p>
                       Available: {loyaltyWallet ? formatCoins(loyaltyWallet.available_coins) : 'Loading…'} coins
                       {loyaltyWallet && ` (${formatPaise(loyaltyWallet.equivalent_paise)})`}. 1 coin = ₹0.01.
                     </p>
                     {loyaltyWallet?.balance_review && (
-                      <p role="alert" style={{ color: '#a04418', fontSize: '0.85rem' }}>
+                      <p role="alert" style={{ color: '#a04418' }}>
                         Your loyalty balance needs review. Please contact support before redeeming coins.
                       </p>
                     )}
-                    <label htmlFor="loyalty-coins" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.4rem' }}>
+                    <label htmlFor="loyalty-coins">
                       Coins to redeem
                     </label>
-                    <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+                    <div className="checkout-coupon__input" style={{ flexWrap: 'wrap' }}>
                       <input
                         id="loyalty-coins"
                         type="number"
@@ -532,47 +518,36 @@ export default function CheckoutPage() {
                         value={loyaltyInput}
                         onChange={(event) => { setLoyaltyInput(event.target.value); setLoyaltyQuote(null); setLoyaltyError(''); }}
                         placeholder="Enter whole coins"
-                        style={{ flex: '1 1 150px', padding: '0.5rem 0.8rem', border: '1px solid #ccc', borderRadius: '8px' }}
+                        style={{ flex: '1 1 150px' }}
                       />
-                      <button type="button" onClick={handleApplyLoyalty} disabled={loyaltyBusy || !loyaltyWallet || items.length === 0} className="button button--secondary" style={{ minHeight: '38px', padding: '0 1rem' }}>
+                      <button type="button" onClick={handleApplyLoyalty} disabled={loyaltyBusy || !loyaltyWallet || items.length === 0}>
                         {loyaltyBusy ? 'Checking…' : 'Apply Coins'}
                       </button>
                       {appliedLoyaltyQuote && (
-                        <button type="button" onClick={() => { setLoyaltyQuote(null); setLoyaltyInput(''); }} className="button button--secondary" style={{ minHeight: '38px', padding: '0 1rem' }}>
+                        <button type="button" onClick={() => { setLoyaltyQuote(null); setLoyaltyInput(''); }}>
                           Remove
                         </button>
                       )}
                     </div>
                     {appliedLoyaltyQuote && (
-                      <small style={{ display: 'block', marginTop: '0.5rem', color: '#007a69' }}>
+                      <small style={{ color: '#007a69' }}>
                         {formatCoins(appliedLoyaltyQuote.discount_paise)} coins applied for a {formatPaise(appliedLoyaltyQuote.discount_paise)} discount.
                         {' '}Maximum for this order: {formatCoins(appliedLoyaltyQuote.max_redeemable_coins)} coins.
                       </small>
                     )}
-                    {!appliedLoyaltyQuote && loyaltyQuote && <small style={{ display: 'block', marginTop: '0.5rem', color: '#866600' }}>Your bag or coupon changed. Apply coins again for a new quote.</small>}
-                    {loyaltyError && <small role="alert" style={{ display: 'block', marginTop: '0.5rem', color: '#c62828' }}>{loyaltyError}</small>}
-                    <small style={{ display: 'block', marginTop: '0.5rem', color: '#666' }}>The final discount and available balance are checked again when you place the order.</small>
+                    {!appliedLoyaltyQuote && loyaltyQuote && <small style={{ color: '#866600' }}>Your bag or coupon changed. Apply coins again for a new quote.</small>}
+                    {loyaltyError && <small role="alert" style={{ color: '#c62828' }}>{loyaltyError}</small>}
+                    <small>The final discount and available balance are checked again when you place the order.</small>
                   </div>
                 ) : (
-                  <p style={{ fontSize: '0.85rem', color: '#666', marginBottom: '1.5rem' }}>
+                  <p className="checkout-loyalty-fallback" style={{ fontSize: '0.85rem', color: '#666', marginBottom: '1.5rem' }}>
                     <Link href="/login?return=/checkout" style={{ color: '#009a84', fontWeight: 600 }}>Sign in</Link> to use Loyalty Coins on this order.
                   </p>
                 )}
 
                 {/* Payment method selector */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  <label
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '1rem',
-                      padding: '1.2rem',
-                      border: `2px solid ${paymentMethod === 'razorpay' ? '#009a84' : '#eee'}`,
-                      borderRadius: '12px',
-                      cursor: 'pointer',
-                      background: paymentMethod === 'razorpay' ? '#f4faf8' : '#fff',
-                    }}
-                  >
+                <div className="payment-options">
+                  <label className="payment-option">
                     <input
                       type="radio"
                       name="payment_method"
@@ -581,25 +556,16 @@ export default function CheckoutPage() {
                       disabled={!razorpayAvailable}
                       onChange={() => setPaymentMethod('razorpay')}
                     />
-                    <i className="ph ph-credit-card" style={{ fontSize: '1.6rem', color: '#009a84' }}></i>
-                    <div>
-                      <strong style={{ display: 'block' }}>Razorpay Online Payment</strong>
-                      <small style={{ color: '#666' }}>{razorpayAvailable ? 'Choose from the payment methods available in Razorpay Checkout' : 'Online payment is not configured yet'}</small>
+                    <div className="payment-option__card">
+                      <i className="ph ph-credit-card"></i>
+                      <div>
+                        <strong>Razorpay Online Payment</strong>
+                        <small>{razorpayAvailable ? 'Choose from the payment methods available in Razorpay Checkout' : 'Online payment is not configured yet'}</small>
+                      </div>
                     </div>
                   </label>
 
-                  <label
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '1rem',
-                      padding: '1.2rem',
-                      border: `2px solid ${paymentMethod === 'cod' ? '#009a84' : '#eee'}`,
-                      borderRadius: '12px',
-                      cursor: 'pointer',
-                      background: paymentMethod === 'cod' ? '#f4faf8' : '#fff',
-                    }}
-                  >
+                  <label className="payment-option">
                     <input
                       type="radio"
                       name="payment_method"
@@ -607,17 +573,19 @@ export default function CheckoutPage() {
                       checked={paymentMethod === 'cod'}
                       onChange={() => setPaymentMethod('cod')}
                     />
-                    <i className="ph ph-hand-coins" style={{ fontSize: '1.6rem', color: '#c19a3d' }}></i>
-                    <div>
-                      <strong style={{ display: 'block' }}>Cash on Delivery (COD)</strong>
-                      <small style={{ color: '#666' }}>Pay cash or UPI when your parcel arrives</small>
+                    <div className="payment-option__card">
+                      <i className="ph ph-hand-coins" style={{ color: '#c19a3d' }}></i>
+                      <div>
+                        <strong>Cash on Delivery (COD)</strong>
+                        <small>Pay cash or UPI when your parcel arrives</small>
+                      </div>
                     </div>
                   </label>
                 </div>
               </section>
 
               {errorMsg && (
-                <div style={{ padding: '1rem', background: '#ffebee', color: '#c62828', borderRadius: '8px', fontWeight: 500 }}>
+                <div className="alert alert--danger">
                   <i className="ph ph-warning-circle"></i> {errorMsg}
                 </div>
               )}
@@ -625,8 +593,7 @@ export default function CheckoutPage() {
               <button
                 type="submit"
                 disabled={submitting || loyaltyBusy || items.length === 0}
-                className="button button--primary"
-                style={{ padding: '1rem', fontSize: '1.1rem', width: '100%', justifyContent: 'center' }}
+                className="checkout-submit"
               >
                 {submitting ? (
                   <>
@@ -642,74 +609,97 @@ export default function CheckoutPage() {
             </form>
 
             {/* Order Summary Sidebar */}
-            <aside style={{ background: '#fff', border: '1px solid #eee', borderRadius: '16px', padding: '1.8rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '1rem', borderBottom: '1px solid #eee', marginBottom: '1.2rem' }}>
-                <span style={{ fontSize: '1.1rem', fontWeight: 700 }}>Your Bag</span>
-                <span style={{ color: '#777', fontSize: '0.9rem' }}>{count} items</span>
+            <aside className="checkout-card">
+              <div className="checkout-card__heading" style={{ justifyContent: 'space-between', marginBottom: '1.2rem' }}>
+                <span style={{ background: 'transparent', color: '#111', width: 'auto', height: 'auto', fontSize: '1.1rem' }}>Your Bag</span>
+                <p>{count} items</p>
               </div>
 
               {items.length === 0 ? (
-                <p style={{ color: '#777' }}>Your bag is currently empty.</p>
+                <p className="empty-state">Your bag is currently empty.</p>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
-                  {items.map((item) => (
-                    <div key={item.id} style={{ display: 'flex', gap: '0.8rem', alignItems: 'center' }}>
-                      <img
-                        src={resolveImageUrl(item.image)}
-                        alt={item.name}
-                        width={48}
-                        height={48}
-                        style={{ borderRadius: '6px', objectFit: 'cover' }}
-                      />
-                      <div style={{ flex: 1, fontSize: '0.85rem' }}>
-                        <strong style={{ display: 'block', color: '#111' }}>{item.name}</strong>
-                        <span style={{ color: '#777' }}>Qty: {item.quantity}</span>
+                <div className="checkout-summary-list">
+                  {items.map((item) => {
+                    const variantLabel =
+                      item.type === 'combo'
+                        ? 'Combo pack'
+                        : (item.variant_name || item.weight || item.uom || '').trim();
+                    const rawSrc = resolveImageUrl(item.image);
+                    const logoSrc = '/assets/images/logo.png';
+                    const logoDead = deadImgs.includes(logoSrc);
+                    const imgSrc = deadImgs.includes(rawSrc) ? logoSrc : rawSrc;
+                    return (
+                    <div key={item.id} className="checkout-summary-item">
+                      <div className="checkout-summary-item__image">
+                        {logoDead && imgSrc === logoSrc ? (
+                          <span className="checkout-summary-item__image-placeholder" aria-hidden="true">
+                            <i className="ph ph-image"></i>
+                          </span>
+                        ) : (
+                          <img
+                            src={imgSrc}
+                            alt=""
+                            width={48}
+                            height={48}
+                            onError={() => markImgDead(imgSrc)}
+                          />
+                        )}
+                        {variantLabel ? (
+                          <span className="checkout-summary-item__badge">
+                            {variantLabel}
+                          </span>
+                        ) : null}
                       </div>
-                      <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>
+                      <div className="checkout-summary-item__info">
+                        <strong>{item.name}</strong>
+                        <span>Qty: {item.quantity}</span>
+                      </div>
+                      <span className="checkout-summary-item__price">
                         {money(item.price * item.quantity)}
                       </span>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
-              <div style={{ borderTop: '1px solid #eee', paddingTop: '1.2rem', display: 'flex', flexDirection: 'column', gap: '0.6rem', fontSize: '0.9rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#666' }}>Subtotal</span>
+              <div className="checkout-summary-totals">
+                <div className="checkout-summary-totals__row">
+                  <span>Subtotal</span>
                   <strong>{money(subtotal)}</strong>
                 </div>
 
                 {discountAmount > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#009a84' }}>
+                  <div className="checkout-summary-totals__row checkout-summary-totals__row--discount">
                     <span>Offer Discount</span>
                     <strong>−{money(discountAmount)}</strong>
                   </div>
                 )}
 
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#666' }}>Delivery</span>
+                <div className="checkout-summary-totals__row">
+                  <span>Delivery</span>
                   <strong>{shippingFee === 0 ? <span style={{ color: '#009a84' }}>FREE</span> : money(shippingFee)}</strong>
                 </div>
 
                 {appliedLoyaltyQuote && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#009a84' }}>
+                  <div className="checkout-summary-totals__row checkout-summary-totals__row--discount">
                     <span>Loyalty Discount ({formatCoins(appliedLoyaltyQuote.discount_paise)} coins)</span>
                     <strong>−{formatPaise(appliedLoyaltyQuote.discount_paise)}</strong>
                   </div>
                 )}
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.2rem', fontWeight: 800, color: '#111', paddingTop: '0.8rem', borderTop: '1px dashed #ddd', marginTop: '0.4rem' }}>
+                <div className="checkout-summary-totals__grand">
                   <span>Grand Total</span>
-                  <span style={{ color: '#009a84' }}>{appliedLoyaltyQuote ? formatPaise(appliedLoyaltyQuote.total_paise) : money(grandTotal)}</span>
+                  <span>{appliedLoyaltyQuote ? formatPaise(appliedLoyaltyQuote.total_paise) : money(grandTotal)}</span>
                 </div>
 
-                {appliedLoyaltyQuote && <small style={{ color: '#666' }}>The server checks this amount again when you place your order.</small>}
+                {appliedLoyaltyQuote && <div className="checkout-summary-totals__note">The server checks this amount again when you place your order.</div>}
 
-                <small style={{ color: '#888', marginTop: '0.4rem' }}>
+                <div className="checkout-summary-totals__note">
                   {subtotal >= freeShippingThreshold
                     ? '✓ Free delivery unlocked on your order!'
                     : `Add ₹${freeShippingThreshold - subtotal} more for free delivery.`}
-                </small>
+                </div>
               </div>
             </aside>
           </div>

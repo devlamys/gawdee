@@ -44,9 +44,19 @@ export function variantDiscountPercent(variant: CatalogVariant | null | undefine
 export function variantDetailGallery(
   variant: CatalogVariant | null | undefined
 ): string[] {
-  const gallery = (variant?.images ?? []).map((g) => g?.imageUrl).filter(Boolean) as string[];
+  const rawGallery = (variant?.images ?? []).map((g) => g?.imageUrl).filter(Boolean) as string[];
   const own = (variant?.image || '').trim();
-  if (own && !gallery.includes(own)) gallery.push(own);
+  if (own) rawGallery.push(own);
+  // Unique, trimmed, non-empty only — broken/duplicate entries never reach the gallery.
+  const seen = new Set<string>();
+  const gallery: string[] = [];
+  for (const raw of rawGallery) {
+    const u = (raw || '').trim();
+    if (u && !seen.has(u)) {
+      seen.add(u);
+      gallery.push(u);
+    }
+  }
   return gallery;
 }
 

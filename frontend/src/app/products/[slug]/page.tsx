@@ -64,6 +64,12 @@ export default function ProductDetailPage() {
   const [selected, setSelected] = useState<CatalogVariant | null>(null);
   const [activeImage, setActiveImage] = useState<string>('');
   const [imgBroken, setImgBroken] = useState(false);
+  // Broken/unnecessary image URLs are dropped so they never render as broken thumbs.
+  const [deadSrcs, setDeadSrcs] = useState<string[]>([]);
+  const markDead = (src: string) => {
+    if (!src) return;
+    setDeadSrcs((prev) => (prev.includes(src) ? prev : [...prev, src]));
+  };
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [reviewProductId, setReviewProductId] = useState<number | null>(null);
@@ -305,7 +311,15 @@ export default function ProductDetailPage() {
   const validStock = Number.isFinite(stock) && stock >= 0 ? stock : 0;
 
   const galleryImages = variantDetailGallery(selected);
-  const mainImage = (!imgBroken && activeImage) || galleryImages[0] || '';
+  // Only real, unique, loadable images — no placeholder fallbacks, no broken thumbs.
+  const validGallery = galleryImages.filter(
+    (src, i, arr) => !!src && !deadSrcs.includes(src) && arr.indexOf(src) === i
+  );
+  const activeValid =
+    !imgBroken && activeImage && !deadSrcs.includes(activeImage) && validGallery.includes(activeImage)
+      ? activeImage
+      : '';
+  const mainImage = activeValid || validGallery[0] || '';
   const displayTitle = `${item.name} ${selected.variantName}`.trim();
 
   const marketingContent: ProductMarketingContent = (() => {
@@ -390,28 +404,40 @@ export default function ProductDetailPage() {
           <div className="pv-gallery">
             <div className="pv-gallery__main">
               <span className="pv-gallery__badge">Delicious<br/>Daily<br/>Nutrition</span>
-              <img
-                src={mainImage ? resolveImageUrl(mainImage) : '/assets/images/temp-products/WhatsApp Image 2026-09-15 at 6.45.50 PM.jpeg'}
-                alt={displayTitle}
-                style={{ objectFit: 'contain' }}
-                onError={() => setImgBroken(true)}
-              />
-            </div>
-            <div className="pv-gallery__thumbs">
-              {(galleryImages.length > 0 ? galleryImages : ['/assets/images/temp-products/WhatsApp Image 2026-09-15 at 6.45.50 PM.jpeg', '/assets/images/temp-products/WhatsApp Image 2026-09-15 at 6.45.50 PM3.jpeg', '/assets/images/temp-products/WhatsApp Image 2026-09-15 at 6.45.50 PM23.jpeg', '/assets/images/temp-products/WhatsApp Image 2026-09-15 at 6.45.51 PM.jpeg']).map((imgSrc, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  className={`pv-gallery__thumb ${(activeImage || galleryImages[0] || '/assets/images/temp-products/WhatsApp Image 2026-09-15 at 6.45.50 PM.jpeg') === imgSrc ? 'is-active' : ''}`}
-                  onClick={() => {
-                    setActiveImage(imgSrc);
-                    setImgBroken(false);
+              {mainImage ? (
+                <img
+                  src={resolveImageUrl(mainImage)}
+                  alt={displayTitle}
+                  style={{ objectFit: 'contain' }}
+                  onError={() => {
+                    setImgBroken(true);
+                    markDead(mainImage);
                   }}
-                >
-                  <img src={resolveImageUrl(imgSrc)} alt="" />
-                </button>
-              ))}
+                />
+              ) : (
+                <span className="pv-gallery__empty" aria-hidden="true">
+                  <i className="ph ph-image"></i>
+                </span>
+              )}
             </div>
+            {validGallery.length > 1 && (
+              <div className="pv-gallery__thumbs">
+                {validGallery.map((imgSrc, idx) => (
+                  <button
+                    key={`${imgSrc}-${idx}`}
+                    type="button"
+                    className={`pv-gallery__thumb ${(activeValid || validGallery[0]) === imgSrc ? 'is-active' : ''}`}
+                    onClick={() => {
+                      setActiveImage(imgSrc);
+                      setImgBroken(false);
+                    }}
+                    aria-label={`View image ${idx + 1}`}
+                  >
+                    <img src={resolveImageUrl(imgSrc)} alt="" onError={() => markDead(imgSrc)} />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Right: Details (Interactive) */}
