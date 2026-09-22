@@ -1967,6 +1967,28 @@ async def get_catalog_rows(db: aiosqlite.Connection, include_inactive: bool = Fa
     return out
 
 
+def normalize_rich_sections_payload(value: Any) -> dict:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, list):
+        return {"image_sections": value}
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return {}
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            return {}
+        if isinstance(parsed, dict):
+            return parsed
+        if isinstance(parsed, list):
+            return {"image_sections": parsed}
+    return {}
+
+
 def validate_item_fields(fields: dict) -> dict:
     name = str(fields.get("name") or "").strip()
     slug = str(fields.get("slug") or "").strip()
@@ -1991,6 +2013,7 @@ def validate_item_fields(fields: dict) -> dict:
     hover_image_url = str(fields.get("hover_image_url", fields.get("hover_image", "")) or "").strip()
     if hover_image_url:
         hover_image_url = validate_image_url(hover_image_url, "Item hover image")[:255]
+    rich_content = normalize_rich_sections_payload(fields.get("rich_image_sections"))
     return {
         "slug": slug,
         "name": name,
@@ -2005,7 +2028,7 @@ def validate_item_fields(fields: dict) -> dict:
         "tag": str(fields.get("tag") or "").strip()[:100],
         "accent": accent,
         "is_active": 1 if fields.get("is_active", 1) else 0,
-        "rich_image_sections": fields.get("rich_image_sections") if isinstance(fields.get("rich_image_sections"), str) else __import__('json').dumps(fields.get("rich_image_sections") or []),
+        "rich_image_sections": json.dumps(rich_content, ensure_ascii=False),
     }
 
 
@@ -2731,6 +2754,8 @@ def to_item_dto(
     cat = category if category is not None else i.get("category_obj", i.get("category"))
     if isinstance(cat, dict) and "imageUrl" not in cat:
         cat = to_category_dto(cat)
+    raw_sections = i.get("rich_image_sections")
+    sections_payload = normalize_rich_sections_payload(raw_sections)
     return {
         "id": int(i.get("id", 0)),
         "slug": str(i.get("slug") or ""),
@@ -2752,6 +2777,9 @@ def to_item_dto(
         "isActive": int(i.get("is_active", 1)),
         "createdAt": str(i.get("created_at") or ""),
         "updatedAt": str(i.get("updated_at") or ""),
+        "rich_image_sections": sections_payload,
+        "richImageSections": sections_payload,
+        "marketing_content": sections_payload,
         "variants": [
             to_variant_dto(v, include_images=include_variant_images)
             for v in vs if isinstance(v, dict)

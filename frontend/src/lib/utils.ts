@@ -26,14 +26,14 @@ export function parseEmbedVideo(url?: string): string {
     const host = parsed.hostname.toLowerCase();
     const path = parsed.pathname.replace(/^\/+/, '');
 
-    if (host.includes('youtube.com')) {
-      const id = parsed.searchParams.get('v');
+    if (host === 'youtube.com' || host === 'www.youtube.com' || host === 'm.youtube.com') {
+      const id = parsed.searchParams.get('v') || (/^(?:shorts|embed)\/([^/]+)/.exec(path)?.[1] ?? '');
       return id ? `https://www.youtube.com/embed/${id}` : '';
     }
     if (host === 'youtu.be') {
       return `https://www.youtube.com/embed/${path}`;
     }
-    if (host.includes('vimeo.com')) {
+    if (host === 'vimeo.com' || host === 'www.vimeo.com' || host === 'player.vimeo.com') {
       return `https://player.vimeo.com/video/${path.replace(/\D/g, '')}`;
     }
   } catch {

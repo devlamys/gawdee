@@ -1,10 +1,12 @@
 'use client';
 import '@/styles/new-pdp.css';
+import '@/styles/product-marketing.css';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { CatalogItem, CatalogVariant, Review } from '@/types';
+import { CatalogItem, CatalogVariant, ProductMarketingContent, Review } from '@/types';
+import { ProductMarketingSections } from '@/components/ProductMarketingSections';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { api } from '@/lib/api';
@@ -287,6 +289,19 @@ export default function ProductDetailPage() {
   const galleryImages = variantDetailGallery(selected);
   const mainImage = (!imgBroken && activeImage) || galleryImages[0] || '';
   const displayTitle = `${item.name} ${selected.variantName}`.trim();
+
+  const marketingContent: ProductMarketingContent = (() => {
+    const raw = item.rich_image_sections ?? item.richImageSections ?? item.marketing_content ?? {};
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? { image_sections: parsed } : (parsed || {});
+      } catch {
+        return {};
+      }
+    }
+    return Array.isArray(raw) ? { image_sections: raw } : raw;
+  })();
 
   const handleAddToCart = () => {
     if (!available) return;
@@ -602,47 +617,11 @@ export default function ProductDetailPage() {
               </div>
             )}
             
-            {/* Rich Image Sections (Loop) */}
-            {(() => {
-              let sections = [];
-              if (typeof item.rich_image_sections === 'string') {
-                try { sections = JSON.parse(item.rich_image_sections); } catch(e) {}
-              } else if (Array.isArray(item.rich_image_sections)) {
-                sections = item.rich_image_sections;
-              }
-              if (!sections || sections.length === 0) return null;
-              
-              return (
-                <div className="pv-rich-sections" style={{ marginTop: '3rem', display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                  {sections.map((sec: any, idx: number) => (
-                    <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      {sec.landscape && (
-                        <div style={{ width: '100%', borderRadius: '12px', overflow: 'hidden' }}>
-                          <img src={sec.landscape.startsWith('/') ? sec.landscape : `/${sec.landscape}`} alt="" style={{ width: '100%', display: 'block', height: 'auto' }} />
-                        </div>
-                      )}
-                      {(sec.portrait_1 || sec.portrait_2) && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                          {sec.portrait_1 ? (
-                            <div style={{ width: '100%', borderRadius: '12px', overflow: 'hidden' }}>
-                              <img src={sec.portrait_1.startsWith('/') ? sec.portrait_1 : `/${sec.portrait_1}`} alt="" style={{ width: '100%', display: 'block', height: 'auto' }} />
-                            </div>
-                          ) : <div />}
-                          {sec.portrait_2 ? (
-                            <div style={{ width: '100%', borderRadius: '12px', overflow: 'hidden' }}>
-                              <img src={sec.portrait_2.startsWith('/') ? sec.portrait_2 : `/${sec.portrait_2}`} alt="" style={{ width: '100%', display: 'block', height: 'auto' }} />
-                            </div>
-                          ) : <div />}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              );
-            })()}
 
           </div>
         </div>
+
+        <ProductMarketingSections content={marketingContent} productName={item.name} />
 
         {/* Customer Reviews */}
         <section style={{ marginTop: '4.5rem', borderTop: '1px solid #eee', paddingTop: '3rem' }}>

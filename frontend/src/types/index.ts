@@ -92,6 +92,24 @@ export interface CatalogVariant {
   imagePreview?: string[];
 }
 
+export interface ProductMarketingFAQ {
+  question: string;
+  answer: string;
+}
+
+export interface ProductMarketingContent {
+  video_url?: string;
+  videoUrl?: string;
+  video?: string;
+  gallery?: string[];
+  image_sections?: Array<{ landscape?: string; portrait_1?: string; portrait_2?: string }>;
+  sections?: Array<{ landscape?: string; portrait_1?: string; portrait_2?: string }>;
+  uses?: string[];
+  benefits?: string[];
+  advantages?: string[];
+  faqs?: ProductMarketingFAQ[];
+}
+
 export interface CatalogItem {
   id: number;
   slug: string;
@@ -102,8 +120,9 @@ export interface CatalogItem {
   imageUrl?: string;
   hoverImage?: string;
   hoverImageUrl?: string;
-  rich_image_sections?: string | Array<{ landscape?: string; portrait_1?: string; portrait_2?: string }>; 
-  richImageSections?: Array<{ landscape?: string; portrait_1?: string; portrait_2?: string }>;
+  rich_image_sections?: string | ProductMarketingContent | Array<{ landscape?: string; portrait_1?: string; portrait_2?: string }>;
+  richImageSections?: ProductMarketingContent | Array<{ landscape?: string; portrait_1?: string; portrait_2?: string }>;
+  marketing_content?: ProductMarketingContent;
   category: string;
   categoryKey: string;
   categoryId: number | null;

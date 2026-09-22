@@ -120,6 +120,25 @@ function VariantImageManager({
   );
 }
 
+function normalizeMarketingContent(value: any): Record<string, any> {
+  if (!value) return {};
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? { image_sections: parsed } : (parsed || {});
+    } catch {
+      return {};
+    }
+  }
+  if (Array.isArray(value)) {
+    return { image_sections: value };
+  }
+  if (typeof value === 'object') {
+    return value;
+  }
+  return {};
+}
+
 function AdminPageContent() {  const searchParams = useSearchParams();
   const view = searchParams.get('view') || 'dashboard';
 
@@ -179,6 +198,25 @@ function AdminPageContent() {  const searchParams = useSearchParams();
       }
     } catch (err: any) {
       showFlash(err.message || 'Image upload error', 'error');
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const handleUploadProductMedia = async (file: File, callback: (url: string) => void) => {
+    if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
+      showFlash('Choose an image or video file.', 'error');
+      return;
+    }
+    setUploadingImage(true);
+    try {
+      const res = await adminApi.uploadMedia(file, 'product-story');
+      const url = res?.file_path || res?.path || res?.url;
+      if (!res?.ok || !url) throw new Error(res?.detail || 'Upload failed');
+      callback(url);
+      showFlash('Media uploaded. Save the product to publish it.');
+    } catch (err: any) {
+      showFlash(err.message || 'Media upload error', 'error');
     } finally {
       setUploadingImage(false);
     }
@@ -709,12 +747,7 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                                 hoverImageUrl: p.hoverImageUrl || p.hoverImage || '',
                                 description: p.description || '',
                                 is_active: p.isActive !== 0,
-                                rich_image_sections: (() => {
-                                  try {
-                                    const val = p.richImageSections || p.rich_image_sections;
-                                    return typeof val === 'string' ? JSON.parse(val) : (val || []);
-                                  } catch (e) { return []; }
-                                })(),
+                                rich_image_sections: normalizeMarketingContent(p.richImageSections || p.rich_image_sections || p.marketing_content),
                                 variants: (p.variants || []).map((v: any) => ({
                                   id: v.id,
                                   variantName: v.variantName || 'Standard',
@@ -3256,6 +3289,19 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                     if (v.uom && !/^[A-Za-z]{1,10}$/.test(String(v.uom).trim())) throw new Error(`${label}: UOM must be 1–10 letters (e.g. g, kg, ml).`);
                   });
                   const cat = categories.find((c: any) => c.id === modalData.categoryId);
+                  const normalizedMarketing = { ...normalizeMarketingContent(modalData.rich_image_sections || {}) };
+                  normalizedMarketing.video_url = String(normalizedMarketing.video_url || normalizedMarketing.videoUrl || '').trim();
+                  delete normalizedMarketing.videoUrl;
+                  for (const field of ['gallery', 'uses', 'benefits', 'advantages']) {
+                    if (Array.isArray(normalizedMarketing[field])) {
+                      normalizedMarketing[field] = normalizedMarketing[field].map((value: string) => String(value).trim()).filter(Boolean);
+                    }
+                  }
+                  if (Array.isArray(normalizedMarketing.faqs)) {
+                    normalizedMarketing.faqs = normalizedMarketing.faqs
+                      .map((faq: any) => ({ question: String(faq.question || '').trim(), answer: String(faq.answer || '').trim() }))
+                      .filter((faq: any) => faq.question && faq.answer);
+                  }
                   const payload = {
                     id: modalData.id || undefined,
                     name,
@@ -3272,7 +3318,7 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                     hover_image_url: modalData.hoverImageUrl || '',
                     description: modalData.description || '',
                     is_active: modalData.is_active ? 1 : 0,
-                    rich_image_sections: modalData.rich_image_sections || [],
+                    rich_image_sections: normalizedMarketing,
                     variants: rows.map((v: any) => ({
                       id: typeof v.id === 'number' ? v.id : undefined,
                       variant_name: (v.variantName || 'Standard').trim(),
@@ -3765,117 +3811,205 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                 </div>
               </div>
 
-              {/* SECTION 3: RICH IMAGE SECTIONS */}
+              {/* SECTION 3: PRODUCT MARKETING CONTENT */}
               <div style={{ background: '#fff', border: '1px solid #e1e7e2', borderRadius: '14px', padding: '18px', marginTop: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                   <div>
                     <h4 style={{ margin: 0, fontSize: '0.85rem', color: '#005c4e', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <i className="ph ph-image"></i> 3. Rich Image Sections (Loop)
+                      <i className="ph ph-image"></i> 3. Product Marketing Content
                     </h4>
                     <small style={{ color: '#77887e', fontSize: '0.65rem' }}>
-                      Add sections of images (1 landscape, 2 portraits) for the product page.
+                      Add product video, gallery, uses, benefits, advantages, FAQs, and image sections.
                     </small>
                   </div>
-                  <button
-                    type="button"
-                    className="admin-button admin-button--secondary"
-                    style={{ fontSize: '0.68rem', padding: '6px 12px' }}
-                    onClick={() => {
-                      const sections = modalData.rich_image_sections || [];
-                      setModalData({ ...modalData, rich_image_sections: [...sections, { landscape: '', portrait_1: '', portrait_2: '' }] });
-                    }}
-                  >
-                    <i className="ph ph-plus"></i> Add Section
-                  </button>
                 </div>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  {(modalData.rich_image_sections || []).map((sec: any, idx: number) => (
-                    <div key={idx} style={{ padding: '16px', background: '#fbfcfb', border: '1px solid #e1e7e2', borderRadius: '8px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                        <strong>Section {idx + 1}</strong>
+
+                {(() => {
+                  const marketing = normalizeMarketingContent(modalData.rich_image_sections || {});
+                  const updateMarketing = (patch: Record<string, any> | ((current: Record<string, any>) => Record<string, any>)) => setModalData((prev: any) => {
+                    const current = normalizeMarketingContent(prev.rich_image_sections);
+                    return { ...prev, rich_image_sections: { ...current, ...(typeof patch === 'function' ? patch(current) : patch) } };
+                  });
+                  const updateListField = (key: string, value: string) => updateMarketing({ [key]: value.split('\n') });
+                  const addFaq = () => updateMarketing({ faqs: [...(marketing.faqs || []), { question: '', answer: '' }] });
+                  const updateFaq = (index: number, field: 'question' | 'answer', value: string) => {
+                    const newFaqs = [...(marketing.faqs || [])];
+                    newFaqs[index] = { ...(newFaqs[index] || {}), [field]: value };
+                    updateMarketing({ faqs: newFaqs });
+                  };
+                  const sections = Array.isArray(marketing.image_sections) ? marketing.image_sections : [];
+
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                      <label>
+                        <span>Video URL</span>
+                        <input
+                          type="text"
+                          placeholder="YouTube, Vimeo, MP4 URL, or uploaded video path"
+                          value={marketing.video_url || marketing.videoUrl || ''}
+                          onChange={(e) => updateMarketing({ video_url: e.target.value, videoUrl: e.target.value })}
+                        />
+                      </label>
+                      <label className="admin-button admin-button--secondary" style={{ width: 'fit-content', cursor: 'pointer' }}>
+                        <i className="ph ph-upload-simple"></i> {uploadingImage ? 'Uploading…' : 'Upload product video'}
+                        <input type="file" accept="video/mp4,video/webm,video/ogg" disabled={uploadingImage} style={{ display: 'none' }} onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleUploadProductMedia(file, (url) => updateMarketing({ video_url: url, videoUrl: url }));
+                          e.target.value = '';
+                        }} />
+                      </label>
+
+                      <label>
+                        <span>Gallery URLs (one per line)</span>
+                        <textarea
+                          rows={4}
+                          placeholder="/assets/images/1.jpg\n/assets/images/2.jpg"
+                          value={Array.isArray(marketing.gallery) ? marketing.gallery.join('\n') : ''}
+                          onChange={(e) => updateMarketing({ gallery: e.target.value.split('\n') })}
+                        />
+                      </label>
+                      <label className="admin-button admin-button--secondary" style={{ width: 'fit-content', cursor: 'pointer' }}>
+                        <i className="ph ph-upload-simple"></i> {uploadingImage ? 'Uploading…' : 'Upload gallery images'}
+                        <input type="file" accept="image/*" multiple disabled={uploadingImage} style={{ display: 'none' }} onChange={async (e) => {
+                          const files = Array.from(e.target.files || []);
+                          e.target.value = '';
+                          for (const file of files) {
+                            await handleUploadProductMedia(file, (url) => updateMarketing((current) => ({ gallery: [...(Array.isArray(current.gallery) ? current.gallery : []), url] })));
+                          }
+                        }} />
+                      </label>
+                      {Array.isArray(marketing.gallery) && marketing.gallery.some((url: string) => url.trim()) && (
+                        <div className="admin-product-gallery">
+                          {marketing.gallery.map((url: string, index: number) => url.trim() && (
+                            <div className="admin-product-gallery__item" key={`${url}-${index}`}>
+                              <img src={url.startsWith('/') || /^https?:\/\//.test(url) ? url : `/${url}`} alt={`Gallery image ${index + 1}`} />
+                              <div>
+                                <button type="button" disabled={index === 0} aria-label={`Move gallery image ${index + 1} left`} onClick={() => updateMarketing((current) => { const gallery = [...current.gallery]; [gallery[index - 1], gallery[index]] = [gallery[index], gallery[index - 1]]; return { gallery }; })}>←</button>
+                                <button type="button" disabled={index === marketing.gallery.length - 1} aria-label={`Move gallery image ${index + 1} right`} onClick={() => updateMarketing((current) => { const gallery = [...current.gallery]; [gallery[index], gallery[index + 1]] = [gallery[index + 1], gallery[index]]; return { gallery }; })}>→</button>
+                                <button type="button" aria-label={`Remove gallery image ${index + 1}`} onClick={() => updateMarketing((current) => ({ gallery: current.gallery.filter((_: string, i: number) => i !== index) }))}>Remove</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
+                        <label>
+                          <span>Uses (one per line)</span>
+                          <textarea rows={5} value={(marketing.uses || []).join('\n')} onChange={(e) => updateListField('uses', e.target.value)} />
+                        </label>
+                        <label>
+                          <span>Benefits (one per line)</span>
+                          <textarea rows={5} value={(marketing.benefits || []).join('\n')} onChange={(e) => updateListField('benefits', e.target.value)} />
+                        </label>
+                        <label>
+                          <span>Advantages (one per line)</span>
+                          <textarea rows={5} value={(marketing.advantages || []).join('\n')} onChange={(e) => updateListField('advantages', e.target.value)} />
+                        </label>
+                      </div>
+
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                          <span style={{ fontWeight: 600, color: '#1d2e27' }}>FAQs</span>
+                          <button type="button" className="admin-button admin-button--secondary" style={{ fontSize: '0.68rem', padding: '6px 10px' }} onClick={addFaq}>
+                            <i className="ph ph-plus"></i> Add FAQ
+                          </button>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          {(marketing.faqs || []).map((faq: any, idx: number) => (
+                            <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '8px', alignItems: 'start', padding: '10px', background: '#fbfcfb', border: '1px solid #e1e7e2', borderRadius: '8px' }}>
+                              <input
+                                type="text"
+                                placeholder="Question"
+                                value={faq.question || ''}
+                                onChange={(e) => updateFaq(idx, 'question', e.target.value)}
+                              />
+                              <textarea
+                                rows={3}
+                                placeholder="Answer"
+                                value={faq.answer || ''}
+                                onChange={(e) => updateFaq(idx, 'answer', e.target.value)}
+                              />
+                              <button type="button" className="admin-action-icon admin-action-icon--danger" onClick={() => updateMarketing({ faqs: (marketing.faqs || []).filter((_: any, i: number) => i !== idx) })}>
+                                <i className="ph ph-trash"></i>
+                              </button>
+                            </div>
+                          ))}
+                          {(!marketing.faqs || marketing.faqs.length === 0) && (
+                            <div style={{ padding: '14px', border: '1px dashed #e1e7e2', borderRadius: '8px', fontSize: '0.76rem', color: '#77887e', background: '#fbfcfb' }}>
+                              No FAQs yet — add common product questions here.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
+                        <div>
+                          <strong style={{ color: '#005c4e' }}>Image sections</strong>
+                          <div style={{ fontSize: '0.65rem', color: '#77887e' }}>1 landscape + 2 portrait images for enhanced storytelling</div>
+                        </div>
                         <button
                           type="button"
-                          className="admin-action-icon admin-action-icon--danger"
-                          onClick={() => {
-                            const newSec = [...modalData.rich_image_sections];
-                            newSec.splice(idx, 1);
-                            setModalData({ ...modalData, rich_image_sections: newSec });
-                          }}
+                          className="admin-button admin-button--secondary"
+                          style={{ fontSize: '0.68rem', padding: '6px 12px' }}
+                          onClick={() => updateMarketing({ image_sections: [...sections, { landscape: '', portrait_1: '', portrait_2: '' }] })}
                         >
-                          <i className="ph ph-trash"></i>
+                          <i className="ph ph-plus"></i> Add Section
                         </button>
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-                        {/* Landscape */}
-                        <div>
-                          <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>Landscape Image</label>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            {sec.landscape && <img src={sec.landscape} alt="" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />}
-                            <label className="admin-button admin-button--secondary" style={{ padding: '4px 8px', fontSize: '0.7rem', cursor: 'pointer' }}>
-                              <i className="ph ph-upload-simple"></i> Upload
-                              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  handleUploadImage(file, (url) => {
-                                    const newSec = [...modalData.rich_image_sections];
-                                    newSec[idx].landscape = url;
-                                    setModalData({ ...modalData, rich_image_sections: newSec });
-                                  });
-                                }
-                              }} />
-                            </label>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        {sections.map((sec: any, idx: number) => (
+                          <div key={idx} style={{ padding: '16px', background: '#fbfcfb', border: '1px solid #e1e7e2', borderRadius: '8px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                              <strong>Section {idx + 1}</strong>
+                              <button type="button" className="admin-action-icon admin-action-icon--danger" onClick={() => updateMarketing({ image_sections: sections.filter((_: any, i: number) => i !== idx) })}>
+                                <i className="ph ph-trash"></i>
+                              </button>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                              <div>
+                                <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>Landscape</label>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  {sec.landscape && <img src={sec.landscape} alt="" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />}
+                                  <label className="admin-button admin-button--secondary" style={{ padding: '4px 8px', fontSize: '0.7rem', cursor: 'pointer' }}>
+                                    <i className="ph ph-upload-simple"></i> Upload
+                                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => { const file = e.target.files?.[0]; if (file) handleUploadImage(file, (url) => { const next = [...sections]; next[idx] = { ...next[idx], landscape: url }; updateMarketing({ image_sections: next }); }); }} />
+                                  </label>
+                                </div>
+                              </div>
+                              <div>
+                                <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>Portrait 1</label>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  {sec.portrait_1 && <img src={sec.portrait_1} alt="" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />}
+                                  <label className="admin-button admin-button--secondary" style={{ padding: '4px 8px', fontSize: '0.7rem', cursor: 'pointer' }}>
+                                    <i className="ph ph-upload-simple"></i> Upload
+                                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => { const file = e.target.files?.[0]; if (file) handleUploadImage(file, (url) => { const next = [...sections]; next[idx] = { ...next[idx], portrait_1: url }; updateMarketing({ image_sections: next }); }); }} />
+                                  </label>
+                                </div>
+                              </div>
+                              <div>
+                                <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>Portrait 2</label>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  {sec.portrait_2 && <img src={sec.portrait_2} alt="" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />}
+                                  <label className="admin-button admin-button--secondary" style={{ padding: '4px 8px', fontSize: '0.7rem', cursor: 'pointer' }}>
+                                    <i className="ph ph-upload-simple"></i> Upload
+                                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => { const file = e.target.files?.[0]; if (file) handleUploadImage(file, (url) => { const next = [...sections]; next[idx] = { ...next[idx], portrait_2: url }; updateMarketing({ image_sections: next }); }); }} />
+                                  </label>
+                                </div>
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                        {/* Portrait 1 */}
-                        <div>
-                          <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>Portrait 1 (Left)</label>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            {sec.portrait_1 && <img src={sec.portrait_1} alt="" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />}
-                            <label className="admin-button admin-button--secondary" style={{ padding: '4px 8px', fontSize: '0.7rem', cursor: 'pointer' }}>
-                              <i className="ph ph-upload-simple"></i> Upload
-                              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  handleUploadImage(file, (url) => {
-                                    const newSec = [...modalData.rich_image_sections];
-                                    newSec[idx].portrait_1 = url;
-                                    setModalData({ ...modalData, rich_image_sections: newSec });
-                                  });
-                                }
-                              }} />
-                            </label>
+                        ))}
+                        {sections.length === 0 && (
+                          <div style={{ textAlign: 'center', padding: '24px', background: '#fbfcfb', border: '1px dashed #e1e7e2', borderRadius: '8px', color: '#77887e', fontSize: '0.8rem' }}>
+                            No image sections added yet. Click “Add Section” to begin.
                           </div>
-                        </div>
-                        {/* Portrait 2 */}
-                        <div>
-                          <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>Portrait 2 (Right)</label>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            {sec.portrait_2 && <img src={sec.portrait_2} alt="" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />}
-                            <label className="admin-button admin-button--secondary" style={{ padding: '4px 8px', fontSize: '0.7rem', cursor: 'pointer' }}>
-                              <i className="ph ph-upload-simple"></i> Upload
-                              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  handleUploadImage(file, (url) => {
-                                    const newSec = [...modalData.rich_image_sections];
-                                    newSec[idx].portrait_2 = url;
-                                    setModalData({ ...modalData, rich_image_sections: newSec });
-                                  });
-                                }
-                              }} />
-                            </label>
-                          </div>
-                        </div>
+                        )}
                       </div>
                     </div>
-                  ))}
-                  {(!modalData.rich_image_sections || modalData.rich_image_sections.length === 0) && (
-                    <div style={{ textAlign: 'center', padding: '24px', background: '#fbfcfb', border: '1px dashed #e1e7e2', borderRadius: '8px', color: '#77887e', fontSize: '0.8rem' }}>
-                      No image sections added yet. Click &quot;Add Section&quot; to begin.
-                    </div>
-                  )}
-                </div>
+                  );
+                })()}
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>

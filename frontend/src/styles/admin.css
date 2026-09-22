@@ -2568,3 +2568,9 @@ img {
     font-size: 0.82rem;
     color: rgba(255, 255, 255, 0.8);
 }
+.admin-product-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.admin-product-gallery__item { overflow: hidden; border: 1px solid #e1e7e2; border-radius: 10px; background: #fff; }
+.admin-product-gallery__item img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; }
+.admin-product-gallery__item > div { display: flex; justify-content: space-between; gap: 3px; padding: 5px; }
+.admin-product-gallery__item button { border: 0; border-radius: 4px; background: #eff5f0; color: #005c4e; cursor: pointer; font-size: .7rem; padding: 3px 5px; }
+.admin-product-gallery__item button:disabled { opacity: .35; cursor: default; }
