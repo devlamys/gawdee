@@ -70,8 +70,26 @@ export default function ProductDetailPage() {
   const [legacyInfo, setLegacyInfo] = useState<{ description?: string; benefits?: string; ingredients?: string }>({});
   const [relatedItems, setRelatedItems] = useState<CatalogItem[]>([]);
   const [quantity, setQuantity] = useState(1);
+  const [isStickyVisible, setIsStickyVisible] = useState(true);
+  const [lastScrollY, setLastScrollY] = useState(0);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      if (currentScrollY > lastScrollY && currentScrollY > 50) {
+        setIsStickyVisible(false);
+      } else if (currentScrollY < lastScrollY) {
+        setIsStickyVisible(true);
+      }
+      setLastScrollY(currentScrollY);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [lastScrollY]);
+
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const [purchaseType, setPurchaseType] = useState<'one_time' | 'subscribe'>('subscribe');
   const [deliveryFreq, setDeliveryFreq] = useState('1 month');
   const [packOffers, setPackOffers] = useState<Array<{ pack_quantity: number; purchase_plan: 'one_time' | 'monthly' | 'two_months'; base_coins: number; bonus_coins: number; estimated_coins: number }>>([]);
@@ -719,7 +737,7 @@ export default function ProductDetailPage() {
 
         {/* Mobile Sticky Add to Bag Bar */}
         <div
-          className="pdp-sticky-bar"
+          className={`pdp-sticky-bar ${!isStickyVisible ? 'is-hidden' : ''}`}
           data-pdp-sticky-bar
           aria-label="Quick purchase bar"
         >

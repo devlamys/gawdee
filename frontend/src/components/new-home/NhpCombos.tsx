@@ -72,8 +72,8 @@ function NhpComboCard({ combo }: { combo: Combo }) {
                 : (combo.details || combo.description)}
             </span>
             <span className="nhp-combo__desc--mobile">
-              {(combo.details || combo.description || '').length > 205
-                ? (combo.details || combo.description || '').substring(0, 205) + '...'
+              {(combo.details || combo.description || '').length > 100
+                ? (combo.details || combo.description || '').substring(0, 100) + '...'
                 : (combo.details || combo.description)}
             </span>
           </p>
@@ -141,8 +141,8 @@ function NhpComboItemCard({ item }: { item: CatalogItem }) {
                 : item.description}
             </span>
             <span className="nhp-combo__desc--mobile">
-              {item.description.length > 205
-                ? item.description.substring(0, 205) + '...'
+              {item.description.length > 100
+                ? item.description.substring(0, 100) + '...'
                 : item.description}
             </span>
           </p>

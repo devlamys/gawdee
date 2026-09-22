@@ -455,6 +455,11 @@ body {
     box-shadow: var(--org-shadow);
     padding: var(--org-space-2xs);
     min-height: var(--org-nav-h);
+    transition: transform 0.3s ease-in-out;
+  }
+  
+  .mobile-bottom-nav.is-hidden {
+    transform: translateY(calc(100% + var(--org-space-xs) + env(safe-area-inset-bottom)));
   }
 
   .mobile-bottom-nav__tab {

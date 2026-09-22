@@ -48,24 +48,7 @@ export const CartDrawer: React.FC = () => {
         aria-labelledby="cart-title"
       >
         <div className="cart-drawer__header">
-          <span className="gx-drawer-logo" aria-hidden="true">
-            {!videoError && (
-              <video
-                className="gx-brand-video"
-                autoPlay
-                muted
-                loop
-                playsInline
-                preload="metadata"
-                poster="/assets/images/logo.png"
-                disablePictureInPicture
-                onError={() => setVideoError(true)}
-              >
-                <source src="/assets/images/logo/Make_please.mp4" type="video/mp4" onError={() => setVideoError(true)} />
-              </video>
-            )}
-            <img className="gx-brand__fallback" src="/assets/images/logo.png" alt="" hidden={!videoError} />
-          </span>
+
           <div>
             <span className="eyebrow eyebrow--light">Your selection</span>
             <h2 id="cart-title">Shopping bag ({count})</h2>

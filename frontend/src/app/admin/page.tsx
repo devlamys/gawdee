@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { adminApi } from '@/lib/admin-api';
 import { money } from '@/lib/utils';
 import { formatOrderTotal, formatPaise } from '@/lib/loyalty';
+import { CATEGORY_ICON_OPTIONS, isImageIconValue } from '@/lib/catalog';
 
 // Mirrors backend make_slug: lowercase, non-alphanumerics → hyphen.
 function autoSlug(name: string): string {
@@ -179,6 +180,8 @@ function AdminPageContent() {  const searchParams = useSearchParams();
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [modalData, setModalData] = useState<any>({});
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [iconPickerOpen, setIconPickerOpen] = useState(false);
+  const [iconMode, setIconMode] = useState<'icon' | 'image'>('icon');
 
   const showFlash = (message: string, type: 'success' | 'error' = 'success') => {
     setFlash({ message, type });
@@ -813,7 +816,9 @@ function AdminPageContent() {  const searchParams = useSearchParams();
               className="admin-button admin-button--primary"
               type="button"
               onClick={() => {
-                setModalData({ name: '', filter: '', image_url: '', icon: '', sort_order: 10, is_active: true });
+                setModalData({ name: '', filter: '', image_url: '', icon: 'ph-squares-four', icon_image: '', parent_id: null, sort_order: 10, is_active: true });
+                setIconPickerOpen(false);
+                setIconMode('icon');
                 setActiveModal('category');
               }}
             >
@@ -915,11 +920,14 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                                   name: c.name || '',
                                   filter: c.filter || '',
                                   image_url: c.imageUrl || c.image || '',
-                                  icon: c.icon || '',
+                                  icon: isImageIconValue(c.icon) ? 'ph-squares-four' : (c.icon || 'ph-squares-four'),
+                                  icon_image: isImageIconValue(c.icon) ? (c.icon || '') : '',
                                   parent_id: c.parentId ?? c.parent_id ?? null,
                                   sort_order: c.sort_order ?? c.sortOrder ?? 0,
                                   is_active: (c.isActive ?? c.is_active) ? true : false,
                                 });
+                                setIconPickerOpen(false);
+                                setIconMode(isImageIconValue(c.icon) ? 'image' : 'icon');
                                 setActiveModal('category');
                               }}
                               className="admin-action-icon"
@@ -2029,7 +2037,10 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                     filter,
                     image: modalData.image_url || '',
                     image_url: modalData.image_url || '',
-                    icon: modalData.icon || '',
+                    // Icon field is dual-mode: uploaded image wins in image mode, else the picked icon.
+                    icon: iconMode === 'image' && (modalData.icon_image || '').trim()
+                      ? (modalData.icon_image || '').trim()
+                      : (modalData.icon || 'ph-squares-four'),
                     parent_id: modalData.parent_id ?? null,
                     sort_order: Math.max(0, parseInt(modalData.sort_order ?? 0) || 0),
                     is_active: modalData.is_active !== false,
@@ -2051,13 +2062,21 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                     required
                     placeholder="e.g. A2 Gir Cow Ghee"
                     value={modalData.name || ''}
-                    onChange={(e) => setModalData({ ...modalData, name: e.target.value })}
+                    onChange={(e) => {
+                      const name = e.target.value;
+                      // New categories: filter key follows the name automatically.
+                      setModalData({
+                        ...modalData,
+                        name,
+                        ...(!modalData.id ? { filter: autoSlug(name) } : {}),
+                      });
+                    }}
                   />
                 </label>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                   <label>
-                    <span>Filter Key *</span>
+                    <span>Filter Key * <small style={{ color: '#7b8981' }}>(auto-set from name)</small></span>
                     <input
                       type="text"
                       required
@@ -2078,87 +2097,131 @@ function AdminPageContent() {  const searchParams = useSearchParams();
                 </div>
 
                 <label>
-                  <span>Category Image</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    {(modalData.image_url) && (
-                      <img
-                        src={`/${String(modalData.image_url).replace(/^\//, '')}`}
-                        alt=""
-                        style={{ width: '44px', height: '44px', objectFit: 'cover', borderRadius: '8px', border: '1px solid #e1e7e2', flexShrink: 0 }}
-                      />
-                    )}
-                    <input
-                      type="text"
-                      placeholder="/assets/images/... or upload"
-                      value={modalData.image_url || ''}
-                      onChange={(e) => setModalData({ ...modalData, image_url: e.target.value })}
-                      style={{ flex: 1 }}
-                    />
-                    <label
-                      className="admin-button admin-button--ghost"
-                      style={{ whiteSpace: 'nowrap', cursor: 'pointer', padding: '9px 12px' }}
-                    >
-                      <i className="ph ph-upload-simple"></i> Upload
-                      <input
-                        type="file"
-                        accept="image/*"
-                        style={{ display: 'none' }}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            handleUploadImage(file, (url) => {
-                              setModalData((prev: any) => ({ ...prev, image_url: url }));
-                            }, 'categories');
-                          }
-                        }}
-                      />
-                    </label>
+                  <span>Icon * <small style={{ color: '#7b8981' }}>(shows on storefront tabs &amp; filters)</small></span>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+                    {(['icon', 'image'] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setIconMode(m)}
+                        className={`admin-button ${iconMode === m ? 'admin-button--primary' : 'admin-button--ghost'}`}
+                        style={{ padding: '7px 14px', fontSize: '0.72rem' }}
+                      >
+                        <i className={`ph ${m === 'icon' ? 'ph-smiley' : 'ph-image'}`}></i>
+                        {m === 'icon' ? 'Select icon' : 'Upload image'}
+                      </button>
+                    ))}
                   </div>
-                </label>
-
-                <label>
-                  <span>Icon Class (optional)</span>
-                  <input
-                    type="text"
-                    placeholder="e.g. ph-bowl-steam"
-                    value={modalData.icon || ''}
-                    onChange={(e) => setModalData({ ...modalData, icon: e.target.value })}
-                  />
-                </label>
-
-                <label>
-                  <span>Parent Category (optional — nests this category under another)</span>
-                  <select
-                    value={modalData.parent_id ?? ''}
-                    onChange={(e) =>
-                      setModalData({
-                        ...modalData,
-                        parent_id: e.target.value === '' ? null : Number(e.target.value),
-                      })
-                    }
-                  >
-                    <option value="">None (top-level category)</option>
-                    {categories
-                      .filter((c: any) => {
-                        if (modalData.id && c.id === modalData.id) return false;
-                        // Exclude descendants (would create a cycle).
-                        let cursor = c.parentId ?? c.parent_id ?? null;
-                        const seen = new Set<number>([c.id]);
-                        while (cursor) {
-                          if (cursor === modalData.id) return false;
-                          if (seen.has(cursor)) break;
-                          seen.add(cursor);
-                          const next = categories.find((q: any) => q.id === cursor);
-                          cursor = next ? (next.parentId ?? next.parent_id ?? null) : null;
-                        }
-                        return true;
-                      })
-                      .map((c: any) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name} (#{c.id})
-                        </option>
-                      ))}
-                  </select>
+                  {iconMode === 'image' ? (
+                    <div>
+                      {(modalData.icon_image) && (
+                        <img
+                          src={`/${String(modalData.icon_image).replace(/^\//, '')}`}
+                          alt="Icon preview"
+                          style={{ width: '52px', height: '52px', objectFit: 'contain', borderRadius: '10px', border: '1px solid #e1e7e2', background: '#f6f8f6', marginBottom: '8px' }}
+                        />
+                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <input
+                          type="text"
+                          placeholder="/assets/uploads/categories/... or upload"
+                          value={modalData.icon_image || ''}
+                          onChange={(e) => setModalData({ ...modalData, icon_image: e.target.value })}
+                          style={{ flex: 1 }}
+                        />
+                        <label
+                          className="admin-button admin-button--ghost"
+                          style={{ whiteSpace: 'nowrap', cursor: 'pointer', padding: '9px 12px' }}
+                        >
+                          <i className="ph ph-upload-simple"></i> Upload
+                          <input
+                            type="file"
+                            accept="image/*"
+                            style={{ display: 'none' }}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                handleUploadImage(file, (url) => {
+                                  setModalData((prev: any) => ({ ...prev, icon_image: url }));
+                                }, 'categories');
+                              }
+                            }}
+                          />
+                        </label>
+                        {(modalData.icon_image) && (
+                          <button
+                            type="button"
+                            className="admin-button admin-button--ghost"
+                            style={{ padding: '9px 12px' }}
+                            onClick={() => setModalData({ ...modalData, icon_image: '' })}
+                          >
+                            <i className="ph ph-x"></i>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                  <div style={{ position: 'relative' }}>
+                    <button
+                      type="button"
+                      onClick={() => setIconPickerOpen((o) => !o)}
+                      aria-haspopup="listbox"
+                      aria-expanded={iconPickerOpen}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', border: '1px solid #dfe7e1', borderRadius: '10px', background: '#fff', cursor: 'pointer', fontSize: '0.85rem', color: '#1d3a2f' }}
+                    >
+                      <span
+                        aria-hidden="true"
+                        style={{ width: '34px', height: '34px', display: 'grid', placeItems: 'center', border: '1px solid #e1e7e2', borderRadius: '9px', background: '#f6f8f6', fontSize: '1.2rem', color: '#005c4e', flexShrink: 0 }}
+                      >
+                        <i className={`ph ${modalData.icon || 'ph-squares-four'}`}></i>
+                      </span>
+                      <span style={{ flex: 1, textAlign: 'left' }}>{modalData.icon || 'ph-squares-four'}</span>
+                      <i className={`ph ${iconPickerOpen ? 'ph-caret-up' : 'ph-caret-down'}`} aria-hidden="true"></i>
+                    </button>
+                    {iconPickerOpen && (
+                      <>
+                        <div
+                          style={{ position: 'fixed', inset: 0, zIndex: 40, cursor: 'default' }}
+                          onClick={() => setIconPickerOpen(false)}
+                          aria-hidden="true"
+                        />
+                        <div
+                          role="listbox"
+                          aria-label="Choose a category icon"
+                          style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 50, background: '#fff', border: '1px solid #dfe7e1', borderRadius: '12px', boxShadow: '0 18px 44px rgba(0,0,0,0.16)', padding: '10px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(76px, 1fr))', gap: '8px', maxHeight: '260px', overflowY: 'auto' }}
+                        >
+                          {CATEGORY_ICON_OPTIONS.map((icon) => {
+                            const isCur = (modalData.icon || 'ph-squares-four') === icon;
+                            return (
+                              <button
+                                key={icon}
+                                type="button"
+                                role="option"
+                                aria-selected={isCur}
+                                title={icon}
+                                onClick={() => {
+                                  setModalData({ ...modalData, icon });
+                                  setIconPickerOpen(false);
+                                }}
+                                style={{
+                                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px',
+                                  padding: '10px 6px', borderRadius: '10px', cursor: 'pointer',
+                                  border: isCur ? '2px solid #009a84' : '1px solid #e6ece7',
+                                  background: isCur ? '#eef7f2' : '#fff', color: '#005c4e',
+                                }}
+                              >
+                                <i className={`ph ${icon}`} aria-hidden="true" style={{ fontSize: '1.5rem' }}></i>
+                                <small style={{ fontSize: '0.6rem', color: '#5c6f65', wordBreak: 'break-all', lineHeight: 1.25 }}>
+                                  {icon.replace(/^ph-/, '')}
+                                </small>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  )}
                 </label>
 
                 <label className="form-switch" style={{ padding: 0 }}>

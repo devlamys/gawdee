@@ -17,7 +17,7 @@ export const WhatsAppFloat: React.FC<WhatsAppFloatProps> = ({ phone = '918891066
       rel="noopener"
       aria-label="Chat with Gawdee on WhatsApp"
     >
-      <i className="ph ph-whatsapp-logo"></i>
+      <img src="/assets/images/gawdee-ai-cow.jpg" alt="WhatsApp Support" />
     </a>
   );
 };

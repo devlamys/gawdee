@@ -177,7 +177,7 @@ export default async function HomePage() {
 
 
       {/* 3. Bestsellers Rail Section (real backend products only) */}
-      <NhpExplore items={items} />
+      <NhpExplore items={items} categories={categories} />
 
       <NhpWhyGawdee />
 
@@ -186,55 +186,7 @@ export default async function HomePage() {
 
       {offers.length > 0 && <OfferCards offers={offers} />}
 
-      {/* 4. Organic Categories Grid */}
-      <section className="commerce-section category-section" id="categories">
-        <div className="container">
-          <div className="commerce-section__heading reveal">
-            <div>
-              <span className="eyebrow">
-                <i className="ph ph-squares-four"></i> Browse the pantry
-              </span>
-              <h2>Shop by category</h2>
-              <p>Find the right products for your daily rituals.</p>
-            </div>
-          </div>
-          <div className="category-grid">
-            <Link
-              className="category-card reveal"
-              data-delay={0}
-              href="/products"
-            >
-              <span className="category-card__visual">
-                <img src="/assets/icons/categories/all-products.webp" alt="All Products" width={64} height={64} loading="lazy" />
-              </span>
-              <strong>All Products</strong>
-              <span className="category-card__arrow">
-                <i className="ph ph-arrow-right"></i>
-              </span>
-            </Link>
-            {categories.map((cat, index) => {
-              const filter = (cat.filter || '').toLowerCase();
-              const artwork = (cat.imageUrl && resolveImageUrl(cat.imageUrl)) || CATEGORY_ARTWORK[filter] || '/assets/icons/categories/all-products.webp';
-              return (
-                <Link
-                  key={cat.id}
-                  className="category-card reveal"
-                  data-delay={(index + 1) * 35}
-                  href={`/products${filter ? `?category=${filter}` : ''}`}
-                >
-                  <span className="category-card__visual">
-                    <img src={artwork} alt={cat.name} width={64} height={64} loading="lazy" />
-                  </span>
-                  <strong>{cat.name}</strong>
-                  <span className="category-card__arrow">
-                    <i className="ph ph-arrow-right"></i>
-                  </span>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      </section>
+
 
 
 

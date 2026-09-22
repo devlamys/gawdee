@@ -9,7 +9,7 @@ import { useCart } from '@/context/CartContext';
 import { money, resolveImageUrl } from '@/lib/utils';
 import { normalizeCategory } from '@/lib/products-data';
 import {
-  categoryIcon,
+  categoryVisual,
   isVariantAvailable,
   variantCardImages,
   variantCartLine,
@@ -37,6 +37,8 @@ function CatalogProductCardItem({
 
   const discount = variantDiscountPercent(selected);
   const available = isVariantAvailable(selected);
+  const rating = Number(item.rating) || 0;
+  const reviewCount = Number(item.reviewCount) || 0;
   // Listing imagery follows the selected variant: first gallery image shows
   // by default, second image swaps in on hover (backend imagePreview order).
   const [firstImage, secondImage] = variantCardImages(item, selected);
@@ -63,25 +65,47 @@ function CatalogProductCardItem({
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >
-        {item.tag && (
-          <span className="product-card__tag">{item.tag}</span>
-        )}
+
         {discount > 0 && (
-          <span className="product-card__discount">{discount}% OFF</span>
+          <span className="nhp-combo__save">{discount}% OFF</span>
         )}
         <img
           src={resolveImageUrl(shownImage)}
           alt={`${item.name} ${selected?.variantName || ''}`.trim()}
           loading="lazy"
         />
+        {rating >= 4.7 && reviewCount > 10 && (
+          <span
+            className="nhp-card__top-rated"
+            style={{
+              position: 'absolute',
+              bottom: '10px',
+              left: '10px',
+              background: '#154a3e',
+              color: '#fff',
+              fontSize: '0.72rem',
+              fontWeight: '700',
+              padding: '4px 8px',
+              borderRadius: '6px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+              border: '1px solid #d4a933',
+              zIndex: 2,
+            }}
+          >
+            <i className="ph-fill ph-star" style={{ color: '#f3c43f', fontSize: '0.85rem' }}></i> Top Rated Choice
+          </span>
+        )}
       </Link>
       <div className="nhp-combo__body">
-        <p className="nhp-combo__category">
-          {item.category} {selected?.variantName ? `· ${selected.variantName}` : ''}
-        </p>
+        {item.tag && (
+          <p className="nhp-combo__category">{item.tag}</p>
+        )}
         <h3 className="nhp-combo__title">
           <Link href={`/products/${item.slug}`}>
-            {item.name}
+            {item.name} - {item.category} {selected?.variantName ? `· ${selected.variantName}` : ''}
           </Link>
         </h3>
         {item.description && (
@@ -92,8 +116,8 @@ function CatalogProductCardItem({
                 : item.description}
             </span>
             <span className="nhp-combo__desc--mobile">
-              {item.description.length > 205
-                ? item.description.substring(0, 205) + '...'
+              {item.description.length > 100
+                ? item.description.substring(0, 100) + '...'
                 : item.description}
             </span>
           </p>
@@ -267,11 +291,11 @@ function CatalogContent() {
   };
 
   const pills = useMemo(() => {
-    const list = [{ key: 'all', label: 'All Products', icon: categoryIcon('all') }];
+    const list = [{ key: 'all', label: 'All Products', visual: categoryVisual(null, 'all') }];
     for (const c of categories) {
       const key = (c.filter || '').toLowerCase() || `cat-${c.id}`;
       if (list.some((p) => p.key === key)) continue;
-      list.push({ key, label: c.name, icon: categoryIcon(c.filter) });
+      list.push({ key, label: c.name, visual: categoryVisual(c) });
     }
     return list;
   }, [categories]);
@@ -290,7 +314,11 @@ function CatalogContent() {
                 className={activeCategory === cat.key ? 'is-active' : ''}
                 onClick={() => handleFilterClick(cat.key)}
               >
-                <i className={`ph ${cat.icon}`}></i>
+                {cat.visual.kind === 'image' ? (
+                  <img src={resolveImageUrl(cat.visual.src)} alt="" aria-hidden="true" style={{ width: '1.2em', height: '1.2em', objectFit: 'contain' }} />
+                ) : (
+                  <i className={cat.visual.className}></i>
+                )}
                 <span>{cat.label}</span>
               </button>
             ))}

@@ -13,6 +13,26 @@ import { useCart } from '@/context/CartContext';
 export const MobileBottomNav: React.FC = () => {
   const pathname = usePathname();
   const { count, openCart } = useCart();
+  const [isVisible, setIsVisible] = React.useState(true);
+  const [lastScrollY, setLastScrollY] = React.useState(0);
+
+  React.useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      // Hide if scrolling down past 50px
+      if (currentScrollY > lastScrollY && currentScrollY > 50) {
+        setIsVisible(false);
+      } 
+      // Show if scrolling up
+      else if (currentScrollY < lastScrollY) {
+        setIsVisible(true);
+      }
+      setLastScrollY(currentScrollY);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [lastScrollY]);
 
   if (pathname.startsWith('/admin') || pathname === '/checkout') {
     return null;
@@ -23,7 +43,7 @@ export const MobileBottomNav: React.FC = () => {
   const isWallet = pathname === '/wallet' || pathname === '/account/loyalty';
 
   return (
-    <nav className="mobile-bottom-nav" aria-label="Primary">
+    <nav className={`mobile-bottom-nav ${!isVisible ? 'is-hidden' : ''}`} aria-label="Primary">
       <Link
         href="/"
         className={`mobile-bottom-nav__tab ${isHome ? 'is-active' : ''}`}
