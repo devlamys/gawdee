@@ -71,22 +71,22 @@ export default function ProductDetailPage() {
   const [relatedItems, setRelatedItems] = useState<CatalogItem[]>([]);
   const [quantity, setQuantity] = useState(1);
   const [isStickyVisible, setIsStickyVisible] = useState(true);
-  const [lastScrollY, setLastScrollY] = useState(0);
+  const lastScrollY = useRef(0);
 
   useEffect(() => {
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
-      if (currentScrollY > lastScrollY && currentScrollY > 50) {
+      if (currentScrollY > lastScrollY.current && currentScrollY > 50) {
         setIsStickyVisible(false);
-      } else if (currentScrollY < lastScrollY) {
+      } else if (currentScrollY < lastScrollY.current) {
         setIsStickyVisible(true);
       }
-      setLastScrollY(currentScrollY);
+      lastScrollY.current = currentScrollY;
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [lastScrollY]);
+  }, []);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -155,8 +155,6 @@ export default function ProductDetailPage() {
   // gallery image and quantity ALL update together — old data never lingers.
   const selectVariant = useCallback((v: CatalogVariant) => {
     setSelected(v);
-    setReviewEligibility(null);
-    setEligibilityLoading(true);
     setQuantity(1);
     setImgBroken(false);
     setLegacyInfo({});
@@ -222,7 +220,7 @@ export default function ProductDetailPage() {
           }
 
           // Related items: same backend category, excluding self.
-          api.catalog.getItems().then((lRes) => {
+          api.catalog.getItems(itm.categoryId ?? undefined).then((lRes) => {
             if (cancelled || !lRes.ok || !Array.isArray(lRes.items)) return;
             const others = lRes.items.filter(
               (p) =>
@@ -266,7 +264,7 @@ export default function ProductDetailPage() {
         if (!cancelled) setEligibilityLoading(false);
       });
     return () => { cancelled = true; };
-  }, [reviewProductId, customer, authLoading, selected?.id, selected?.slug]);
+  }, [reviewProductId, customer, authLoading]);
 
 
 
