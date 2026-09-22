@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { money, resolveImageUrl } from '@/lib/utils';
@@ -8,9 +8,32 @@ import { money, resolveImageUrl } from '@/lib/utils';
 export const CheckoutStickyBar: React.FC = () => {
   const pathname = usePathname();
   const { items, count, subtotal, openCart, isOpen } = useCart();
+  const [isVisible, setIsVisible] = useState(true);
+  const [lastScrollY, setLastScrollY] = useState(0);
 
-  // Do not show on checkout page or if cart is empty or if cart drawer is open
-  if (pathname === '/checkout' || pathname.startsWith('/admin') || count <= 0 || isOpen) {
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      if (currentScrollY > lastScrollY && currentScrollY > 50) {
+        setIsVisible(false);
+      } else if (currentScrollY < lastScrollY) {
+        setIsVisible(true);
+      }
+      setLastScrollY(currentScrollY);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [lastScrollY]);
+
+  // Do not show on checkout page, admin pages, single product pages (PDP), or if cart is empty/open
+  if (
+    pathname === '/checkout' ||
+    pathname.startsWith('/admin') ||
+    pathname.startsWith('/products/') ||
+    count <= 0 ||
+    isOpen
+  ) {
     return null;
   }
 
@@ -18,7 +41,7 @@ export const CheckoutStickyBar: React.FC = () => {
   const imgSrc = lastItem?.image ? resolveImageUrl(lastItem.image) : '/assets/images/logo.png';
 
   return (
-    <div className="checkout-sticky-bar" data-checkout-sticky role="complementary" aria-label="Cart summary">
+    <div className={`checkout-sticky-bar ${!isVisible ? 'is-hidden' : ''}`} data-checkout-sticky role="complementary" aria-label="Cart summary">
       <div className="checkout-sticky-bar__info">
         <div className="checkout-sticky-bar__img-wrap">
           <img src={imgSrc} alt={lastItem?.name || 'Cart item'} className="checkout-sticky-bar__img" />

@@ -17,26 +17,37 @@ a {
 /* AI Assistant floating orb image override */
 @keyframes pulseOrb {
   0% { transform: scale(1); }
-  50% { transform: scale(1.1); }
+  50% { transform: scale(1.15); }
   100% { transform: scale(1); }
 }
 
-.ai-float__orb {
+.whatsapp-float {
   border: none !important;
-  width: 56px !important;
-  height: 56px !important;
+  background-color: transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  width: 64px !important;
+  height: 64px !important;
   animation: pulseOrb 2s ease-in-out infinite;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  overflow: visible !important;
 }
 @media (max-width: 640px) {
-  .ai-float__orb {
-    width: 48px !important;
-    height: 48px !important;
+  .whatsapp-float {
+    width: 56px !important;
+    height: 56px !important;
   }
 }
-.ai-float__orb img {
+.whatsapp-float img {
   width: 100% !important;
   height: 100% !important;
-  object-fit: cover !important;
+  object-fit: contain !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
 }
 
 .nhp-combo__desc--mobile { display: none; }

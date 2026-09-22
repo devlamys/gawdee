@@ -592,3 +592,12 @@
 .pv-reviews-scroll::-webkit-scrollbar {
   display: none;
 }
+
+@media (max-width: 768px) {
+  .pv-po-box,
+  .pv-add-cart {
+    width: 92%;
+    margin-left: auto;
+    margin-right: auto;
+  }
+}

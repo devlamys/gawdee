@@ -177,7 +177,7 @@ export default async function HomePage() {
 
 
       {/* 3. Bestsellers Rail Section (real backend products only) */}
-      <NhpExplore items={items} />
+      <NhpExplore items={items} categories={categories} />
 
       <NhpWhyGawdee />
 

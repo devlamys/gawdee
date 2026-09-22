@@ -102,7 +102,7 @@ function NhpProductCard({ item }: { item: CatalogItem }) {
         {badgeText && (badgeText.includes('OFF') || (badgeText === 'Bulk Family Savings' && item.id === 4)) && (
           <span className="nhp-combo__save">{badgeText}</span>
         )}
-        {item.id === 1 && discount > 0 && (
+        {discount > 0 && !(badgeText && badgeText.includes('OFF')) && (
           <span className="nhp-combo__save">{discount}% OFF</span>
         )}
         <button type="button" className="nhp-card__wishlist" aria-label="Add to wishlist">
@@ -113,6 +113,30 @@ function NhpProductCard({ item }: { item: CatalogItem }) {
         ) : (
           <span className="nhp-card__noimage" aria-hidden="true">
             <i className="ph ph-image"></i>
+          </span>
+        )}
+        {rating >= 4.7 && reviewCount > 10 && (
+          <span
+            className="nhp-card__top-rated"
+            style={{
+              position: 'absolute',
+              bottom: '10px',
+              left: '10px',
+              background: '#154a3e',
+              color: '#fff',
+              fontSize: '0.72rem',
+              fontWeight: '700',
+              padding: '4px 8px',
+              borderRadius: '6px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+              border: '1px solid #d4a933',
+              zIndex: 2,
+            }}
+          >
+            <i className="ph-fill ph-star" style={{ color: '#f3c43f', fontSize: '0.85rem' }}></i> Top Rated Choice
           </span>
         )}
       </Link>
@@ -148,7 +172,7 @@ function NhpProductCard({ item }: { item: CatalogItem }) {
               {item.description.length > 200 ? `${item.description.substring(0, 200)}...` : item.description}
             </p>
             <p className="nhp-card__desc nhp-card__desc--mobile" style={{ fontSize: '0.85rem', color: '#7a8a80', marginTop: '2px', margin: 0, textAlign: 'justify' }}>
-              {item.description.length > 151 ? `${item.description.substring(0, 151)}...` : item.description}
+              {item.description.length > 100 ? `${item.description.substring(0, 100)}...` : item.description}
             </p>
           </>
         )}

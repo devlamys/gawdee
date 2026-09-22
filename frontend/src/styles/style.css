@@ -3249,7 +3249,7 @@ em {
    -------------------------------------------------------------------------- */
 .ai-float {
   position: fixed;
-  right: 28px;
+  left: 28px;
   bottom: 28px;
   z-index: 150;
   cursor: pointer;
@@ -3446,8 +3446,8 @@ em {
 
 .whatsapp-float {
   position: fixed;
-  left: 28px;
-  bottom: 28px;
+  right: 28px;
+  bottom: 48px;
   z-index: 150;
   width: 56px;
   height: 56px;
@@ -11347,12 +11347,12 @@ html {
   line-height: 0;
 }
 .gx-brand-video {
-  height: 48px;
+  object-fit: contain;
+  border-radius: 10px;
   width: auto;
   max-width: 210px;
-  object-fit: contain;
+  height: 73px;
   display: block;
-  border-radius: 10px;
 }
 .gx-brand-video[hidden],
 .commerce-logo.gx-brand-logo .header-logo-img[hidden] {
@@ -11371,7 +11371,7 @@ html {
 }
 @media (max-width: 480px) {
   .gx-brand-video {
-    height: 40px;
+    height: 74px;
   }
 }
 
@@ -11555,6 +11555,10 @@ html {
   justify-content: space-between;
   gap: 12px;
   box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.09);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.pdp-sticky-bar.is-hidden {
+  transform: translateY(150%);
 }
 @media (min-width: 769px) {
   .pdp-sticky-bar {
@@ -11618,14 +11622,16 @@ html {
 /* Floating widgets safe area & PDP sticky bar awareness */
 @media (max-width: 640px) {
   .whatsapp-float {
-    left: 16px !important;
-    bottom: calc(16px + env(safe-area-inset-bottom, 0px)) !important;
+    right: 16px !important;
+    left: auto !important;
+    bottom: calc(36px + env(safe-area-inset-bottom, 0px)) !important;
     width: 48px !important;
     height: 48px !important;
     font-size: 1.6rem !important;
   }
   .ai-float {
-    right: 16px !important;
+    left: 16px !important;
+    right: auto !important;
     bottom: calc(16px + env(safe-area-inset-bottom, 0px)) !important;
   }
   .ai-float__orb {
@@ -11651,10 +11657,10 @@ html {
   }
   body:has(.pdp-sticky-bar) .whatsapp-float,
   body:has(.pdp-sticky-bar) .ai-float {
-    bottom: calc(74px + env(safe-area-inset-bottom, 0px)) !important;
+    bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important;
   }
   body:has(.pdp-sticky-bar) .checkout-sticky-bar {
-    bottom: calc(84px + env(safe-area-inset-bottom, 0px)) !important;
+    bottom: calc(106px + env(safe-area-inset-bottom, 0px)) !important;
   }
 }
 
@@ -11708,7 +11714,11 @@ html {
   justify-content: space-between;
   align-items: center;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-  transition: bottom 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: bottom 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.checkout-sticky-bar.is-hidden {
+  transform: translate(-50%, calc(100% + 150px));
 }
 
 .checkout-sticky-bar__info {
