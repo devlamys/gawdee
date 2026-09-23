@@ -244,6 +244,7 @@ export default function CheckoutPage() {
           throw new Error('Payment gateway failed to load. Please refresh and try again.');
         }
 
+        let verificationStarted = false;
         const options = {
           key: rpKeyId,
           amount: (res.razorpay?.amount ?? res.total_paise ?? res.total * 100),
@@ -260,6 +261,9 @@ export default function CheckoutPage() {
             color: '#009a84',
           },
           handler: async (response: any) => {
+            if (verificationStarted) return;
+            verificationStarted = true;
+            rzp.close();
             try {
               const verifyRes = await api.verifyPayment({
                 order_number: res.order_number,
@@ -273,22 +277,32 @@ export default function CheckoutPage() {
                 markOrderForCelebration(res.order_number);
                 router.push(`/order-success?order=${res.order_number}`);
               } else {
-                setErrorMsg('Payment verification failed. Please contact support.');
+                setErrorMsg(`We could not confirm payment for ${res.order_number}. If your bank shows a debit, do not pay again; contact the store with this order number.`);
                 setSubmitting(false);
               }
             } catch (err: any) {
-              setErrorMsg(err.message || 'Payment verification error.');
+              setErrorMsg(`We could not confirm payment for ${res.order_number}. ${err.message || 'Please contact the store.'} If your bank shows a debit, do not pay again.`);
               setSubmitting(false);
             }
           },
           modal: {
             ondismiss: () => {
-              setSubmitting(false);
+              if (!verificationStarted) setSubmitting(false);
             },
           },
         };
 
         const rzp = new window.Razorpay(options);
+        rzp.on('payment.failed', (response: { error?: { description?: string } }) => {
+          if (verificationStarted) return;
+          rzp.close();
+          const description = response.error?.description || 'Razorpay could not complete the payment.';
+          const message = /website.*does not match/i.test(description)
+            ? 'Online payment is unavailable for this store’s current website. Please contact the store.'
+            : description;
+          setErrorMsg(`${message} Order: ${res.order_number}. If your bank shows a debit, contact the store before paying again.`);
+          setSubmitting(false);
+        });
         rzp.open();
       }
     } catch (err: any) {
@@ -585,7 +599,7 @@ export default function CheckoutPage() {
               </section>
 
               {errorMsg && (
-                <div className="alert alert--danger">
+                <div role="alert" className="alert alert--danger">
                   <i className="ph ph-warning-circle"></i> {errorMsg}
                 </div>
               )}

@@ -92,6 +92,28 @@ export interface LoyaltyPackBonusRule {
 
 const API_BASE = typeof window === 'undefined' ? env.internalApiUrl : env.publicApiUrl;
 
+export interface AdminSetupPayload {
+  name: string;
+  email: string;
+  password: string;
+  password_confirmation: string;
+}
+
+export class AdminApiError extends Error {
+  constructor(public status: number, data: { detail?: unknown; message?: string }) {
+    const detail = data.detail;
+    const message = typeof detail === 'string'
+      ? detail
+      : Array.isArray(detail)
+        ? detail.map((error) => error.msg).filter(Boolean).join('; ')
+        : detail && typeof detail === 'object' && 'message' in detail
+          ? String(detail.message)
+          : data.message;
+    super(message || `Request failed with status ${status}`);
+    this.name = 'AdminApiError';
+  }
+}
+
 function getAdminToken(): string | null {
   if (typeof window === 'undefined') return null;
   const local = localStorage.getItem('gawdee_admin_token');
@@ -138,7 +160,7 @@ async function adminFetch<T = any>(
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    throw new Error(data.detail || data.message || `Request failed with status ${res.status}`);
+    throw new AdminApiError(res.status, data);
   }
 
   return data;
@@ -172,7 +194,7 @@ async function catalogFetch<T>(
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    throw new Error(data.detail || data.message || `Request failed with status ${res.status}`);
+    throw new AdminApiError(res.status, data);
   }
 
   return data;
@@ -180,7 +202,8 @@ async function catalogFetch<T>(
 
 export const adminApi = {
   // Auth
-  async login(email: string, password: string) {    const data = await adminFetch('/login', {
+  async login(email: string, password: string) {
+    const data = await adminFetch('/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
@@ -198,7 +221,7 @@ export const adminApi = {
     return adminFetch<{ ok: boolean; setup_required: boolean }>('/setup-status');
   },
 
-  async setup(payload: { name: string; email: string; password: string; password_confirmation: string }) {
+  async setup(payload: AdminSetupPayload) {
     const data = await adminFetch('/setup', {
       method: 'POST',
       body: JSON.stringify(payload),

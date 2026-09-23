@@ -1,8 +1,8 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { adminApi, setAdminToken } from '@/lib/admin-api';
+import { adminApi, type AdminSetupPayload } from '@/lib/admin-api';
 
 interface AdminUser {
   id: number;
@@ -15,6 +15,7 @@ interface AdminAuthContextType {
   admin: AdminUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  setup: (payload: AdminSetupPayload) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -25,41 +26,56 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
+  const authVersion = useRef(0);
 
   useEffect(() => {
+    let active = true;
+    const version = ++authVersion.current;
     async function checkAuth() {
       try {
         const res = await adminApi.me();
+        if (!active || version !== authVersion.current) return;
         if (res?.ok && res.admin) {
           setAdmin(res.admin);
         } else {
           setAdmin(null);
         }
       } catch {
-        setAdmin(null);
+        if (active && version === authVersion.current) setAdmin(null);
       } finally {
-        setLoading(false);
+        if (active && version === authVersion.current) setLoading(false);
       }
     }
     checkAuth();
+    return () => { active = false; };
   }, [pathname]);
 
-  const login = async (email: string, password: string) => {
-    const res = await adminApi.login(email, password);
-    if (res?.ok && res.admin) {
+  const authenticate = async (request: () => Promise<{ ok: boolean; admin: AdminUser }>) => {
+    // Ignore session checks started before this login or first-admin setup.
+    const version = ++authVersion.current;
+    try {
+      const res = await request();
+      if (version !== authVersion.current) return;
+      if (!res?.ok || !res.admin) throw new Error('Unable to sign in. Please try again.');
       setAdmin(res.admin);
-      router.push('/admin');
+      router.replace('/admin');
+    } finally {
+      if (version === authVersion.current) setLoading(false);
     }
   };
 
+  const login = (email: string, password: string) => authenticate(() => adminApi.login(email, password));
+  const setup = (payload: AdminSetupPayload) => authenticate(() => adminApi.setup(payload));
+
   const logout = async () => {
+    ++authVersion.current;
     await adminApi.logout();
     setAdmin(null);
     router.push('/admin/login');
   };
 
   return (
-    <AdminAuthContext.Provider value={{ admin, loading, login, logout }}>
+    <AdminAuthContext.Provider value={{ admin, loading, login, setup, logout }}>
       {children}
     </AdminAuthContext.Provider>
   );
