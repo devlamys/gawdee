@@ -137,6 +137,19 @@
   display: block;
 }
 
+.nhp-card__media img.nhp-card__img-hover {
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 1;
+}
+
+.nhp-card:hover .nhp-card__media img.nhp-card__img-hover {
+  opacity: 1;
+}
+
 .nhp-card__noimage {
   display: grid;
   place-items: center;

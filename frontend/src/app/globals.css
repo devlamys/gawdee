@@ -50,11 +50,6 @@ a {
   box-sizing: border-box !important;
 }
 
-.nhp-combo__desc--mobile { display: none; }
-@media (max-width: 640px) {
-  .nhp-combo__desc--desktop { display: none !important; }
-  .nhp-combo__desc--mobile { display: inline !important; }
-}
 
 /* AI Chat full screen mobile override */
 @media (max-width: 640px) {

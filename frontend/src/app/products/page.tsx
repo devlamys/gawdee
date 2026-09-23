@@ -110,16 +110,9 @@ function CatalogProductCardItem({
         </h3>
         {item.description && (
           <p className="nhp-combo__desc">
-            <span className="nhp-combo__desc--desktop">
-              {item.description.length > 434
-                ? item.description.substring(0, 434) + '...'
-                : item.description}
-            </span>
-            <span className="nhp-combo__desc--mobile">
-              {item.description.length > 100
-                ? item.description.substring(0, 100) + '...'
-                : item.description}
-            </span>
+            {item.description.length > 100
+              ? item.description.substring(0, 100) + '...'
+              : item.description}
           </p>
         )}
         <div className="catalog-product-card__rating" style={{ marginBottom: '12px' }}>
@@ -281,6 +274,31 @@ function CatalogContent() {
         out.push({ item, variant: v });
       }
     }
+
+    out.sort((a, b) => {
+      const getOrder = (item: CatalogItem) => {
+        if (item.categoryObj && typeof item.categoryObj.sortOrder === 'number') {
+          return item.categoryObj.sortOrder;
+        }
+        const match = categories.find(c => 
+          (item.categoryId && c.id === item.categoryId) ||
+          (item.categoryKey && c.filter && c.filter.toLowerCase() === item.categoryKey.toLowerCase()) ||
+          (item.category && c.name && c.name.toLowerCase() === (item.category as string).toLowerCase())
+        );
+        return match?.sortOrder ?? 9999;
+      };
+
+      const catA = getOrder(a.item);
+      const catB = getOrder(b.item);
+      if (catA !== catB) return catA - catB;
+
+      const nameA = (a.item.name || '').toLowerCase();
+      const nameB = (b.item.name || '').toLowerCase();
+      if (nameA !== nameB) return nameA.localeCompare(nameB);
+
+      return (a.variant.mrp || 0) - (b.variant.mrp || 0);
+    });
+
     return out;
   }, [filteredItems]);
 

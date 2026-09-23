@@ -629,7 +629,7 @@ export default function ProductDetailPage() {
               <h3 style={{ fontSize: '1.05rem', fontWeight: 800, textTransform: 'uppercase', color: '#111', marginBottom: '12px' }}>
                 Product Description
               </h3>
-              <p style={{ fontSize: '1.05rem', lineHeight: 1.6, color: '#555', whiteSpace: 'pre-line' }}>
+              <p style={{ fontSize: '1.05rem', lineHeight: 1.6, color: '#555', whiteSpace: 'pre-line', textAlign: 'justify' }}>
                 {item.description || legacyInfo.description || 'Handcrafted using traditional methods to preserve authentic flavor and natural nutrition.'}
               </p>
             </div>

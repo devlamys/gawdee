@@ -10,7 +10,7 @@ import {
   exploreTabVisual,
   firstValidVariant,
   isVariantAvailable,
-  itemCardImage,
+  variantCardImages,
   variantCartLine,
   variantDiscountPercent,
 } from '@/lib/catalog';
@@ -81,7 +81,7 @@ function NhpProductCard({ item }: { item: CatalogItem }) {
   const badgeText = (item.tag || '').trim();
   const discount = variantDiscountPercent(selected);
   const available = isVariantAvailable(selected);
-  const image = itemCardImage(item);
+  const [firstImage, hoverImage] = variantCardImages(item, selected);
   const cartQty = selected ? (cartItems.find((i) => i.id === String(selected.id))?.quantity ?? 0) : 0;
   const saved = selected && selected.mrp > selected.sellingPrice ? selected.mrp - selected.sellingPrice : 0;
 
@@ -108,8 +108,13 @@ function NhpProductCard({ item }: { item: CatalogItem }) {
         <button type="button" className="nhp-card__wishlist" aria-label="Add to wishlist">
           <i className="ph ph-heart"></i>
         </button>
-        {image ? (
-          <img src={resolveImageUrl(image)} alt={item.name} loading="lazy" />
+        {firstImage ? (
+          <>
+            <img src={resolveImageUrl(firstImage)} alt={item.name} loading="lazy" className={hoverImage ? 'nhp-card__img-main' : ''} />
+            {hoverImage && (
+              <img src={resolveImageUrl(hoverImage)} alt={item.name} loading="lazy" className="nhp-card__img-hover" />
+            )}
+          </>
         ) : (
           <span className="nhp-card__noimage" aria-hidden="true">
             <i className="ph ph-image"></i>
@@ -339,13 +344,31 @@ export function NhpExplore({ items, categories = [] }: { items: CatalogItem[]; c
       }
     });
 
-    // Sort by category alphabetically
+    // Sort by category sortOrder, then item name, then variant mrp
     allVariants.sort((a, b) => {
-      const catA = (a.category || '').toLowerCase();
-      const catB = (b.category || '').toLowerCase();
-      if (catA < catB) return -1;
-      if (catA > catB) return 1;
-      return 0;
+      const getOrder = (item: CatalogItem) => {
+        if (item.categoryObj && typeof item.categoryObj.sortOrder === 'number') {
+          return item.categoryObj.sortOrder;
+        }
+        const match = categories.find(c => 
+          (item.categoryId && c.id === item.categoryId) ||
+          (item.categoryKey && c.filter && c.filter.toLowerCase() === item.categoryKey.toLowerCase()) ||
+          (item.category && c.name && c.name.toLowerCase() === (item.category as string).toLowerCase())
+        );
+        return match?.sortOrder ?? 9999;
+      };
+
+      const catA = getOrder(a);
+      const catB = getOrder(b);
+      if (catA !== catB) return catA - catB;
+
+      const nameA = (a.name || '').toLowerCase();
+      const nameB = (b.name || '').toLowerCase();
+      if (nameA !== nameB) return nameA.localeCompare(nameB);
+
+      const mrpA = a.variants?.[0]?.mrp ?? 0;
+      const mrpB = b.variants?.[0]?.mrp ?? 0;
+      return mrpA - mrpB;
     });
 
     return allVariants;
