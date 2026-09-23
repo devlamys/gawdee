@@ -1,0 +1,9 @@
+[Unit]
+Description=Gawdee %i backup
+
+[Service]
+Type=oneshot
+User=gawdee-%i
+Group=gawdee-%i
+UMask=0077
+ExecStart=/usr/bin/flock /srv/gawdee/%i/shared/operations.lock /usr/local/bin/gawdee-python /usr/local/lib/gawdee/backup.py %i
