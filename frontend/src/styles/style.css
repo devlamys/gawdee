@@ -587,6 +587,10 @@ em {
   color: var(--gawdee-secondary);
 }
 
+.desktop-main-nav .nav-link.is-active {
+  color: var(--gawdee-secondary);
+}
+
 .desktop-main-nav .nav-link::after {
   content: "";
   position: absolute;
@@ -599,6 +603,10 @@ em {
 }
 
 .desktop-main-nav .nav-link:hover::after {
+  right: 0;
+}
+
+.desktop-main-nav .nav-link.is-active::after {
   right: 0;
 }
 

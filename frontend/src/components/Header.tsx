@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
-import { StorefrontSettings } from '@/types';
+import { StorefrontSettings, CatalogCategory } from '@/types';
 import { money, resolveImageUrl } from '@/lib/utils';
+import { api } from '@/lib/api';
 import { env } from '@/config/env';
 
 interface HeaderProps {
@@ -24,6 +25,8 @@ export const Header: React.FC<HeaderProps> = ({ settings }) => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [videoError, setVideoError] = useState(false);
+  const [navCategories, setNavCategories] = useState<CatalogCategory[]>([]);
+  const [activeNavKey, setActiveNavKey] = useState<string>('all');
   const mobileSearchRef = React.useRef<HTMLInputElement>(null);
   const desktopSearchRef = React.useRef<HTMLInputElement>(null);
 
@@ -58,6 +61,77 @@ export const Header: React.FC<HeaderProps> = ({ settings }) => {
       }
     }
   };
+
+  // Dynamic nav categories — same backend source as `catalog-filters` pills
+  // on /products (GET /catalog/categories). Top-level active categories,
+  // sorted by admin sortOrder, so header never goes stale when the admin
+  // renames/adds/removes categories.
+  useEffect(() => {
+    let cancelled = false;
+    api.catalog
+      .getCategories()
+      .then((res) => {
+        if (cancelled || !res?.ok || !Array.isArray(res.categories)) return;
+        const active = res.categories.filter((c) => c.isActive !== 0);
+        active.sort((a, b) => (a.sortOrder ?? 9999) - (b.sortOrder ?? 9999));
+        setNavCategories(active);
+      })
+      .catch(() => {
+        // Keep hardcoded fallback links below — nav never renders empty.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Track the active category without useSearchParams (avoids requiring a
+  // Suspense boundary in every layout that renders the header).
+  useEffect(() => {
+    const readFromUrl = () => {
+      try {
+        const key = new URLSearchParams(window.location.search).get('category');
+        setActiveNavKey((key || 'all').toLowerCase().trim() || 'all');
+      } catch {
+        setActiveNavKey('all');
+      }
+    };
+    readFromUrl();
+    const onPop = () => readFromUrl();
+    const onFilter = (e: Event) => {
+      const detail = (e as CustomEvent<string>).detail;
+      if (detail !== undefined) setActiveNavKey(String(detail || 'all').toLowerCase());
+    };
+    window.addEventListener('popstate', onPop);
+    window.addEventListener('gawdee:category-filter', onFilter);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      window.removeEventListener('gawdee:category-filter', onFilter);
+    };
+  }, [pathname]);
+
+  // Same keys the `catalog-filters` pills use: backend `filter` slug,
+  // lowercased. Falls back to the legacy hardcoded list until the API
+  // responds (or if it fails), so the nav never breaks.
+  const dynamicNavLinks = useMemo(() => {
+    const topLevel = navCategories.filter((c) => c.parentId == null);
+    const source = topLevel.length > 0 ? topLevel : navCategories;
+    return source
+      .map((c) => ({
+        key: (c.filter || '').toLowerCase().trim() || `cat-${c.id}`,
+        label: c.name,
+      }))
+      .filter((l) => l.key && l.label);
+  }, [navCategories]);
+
+  const fallbackNavLinks = [
+    { key: 'ghee', label: 'Ghee' },
+    { key: 'honey', label: 'Honey' },
+    { key: 'nutrition', label: 'Mix Me' },
+    { key: 'sugar', label: 'Sugar' },
+    { key: 'wellness', label: 'Drops' },
+  ];
+
+  const headerNavLinks = dynamicNavLinks.length > 0 ? dynamicNavLinks : fallbackNavLinks;
 
   useEffect(() => {
     document.body.classList.toggle('is-locked', mobileMenuOpen);
@@ -158,51 +232,23 @@ export const Header: React.FC<HeaderProps> = ({ settings }) => {
         <nav className="desktop-main-nav desktop-only" aria-label="Primary navigation">
           <Link
             href="/products"
-            className="nav-link"
+            className={`nav-link${pathname === '/products' && activeNavKey === 'all' ? ' is-active' : ''}`}
             onClick={(e) => handleCategoryNav(e, 'all')}
           >
             All Products
           </Link>
-          <Link
-            href="/products?category=ghee"
-            className="nav-link"
-            data-nav-filter="ghee"
-            onClick={(e) => handleCategoryNav(e, 'ghee')}
-          >
-            Ghee
-          </Link>
-          <Link
-            href="/products?category=honey"
-            className="nav-link"
-            data-nav-filter="honey"
-            onClick={(e) => handleCategoryNav(e, 'honey')}
-          >
-            Honey
-          </Link>
-          <Link
-            href="/products?category=nutrition"
-            className="nav-link"
-            data-nav-filter="nutrition"
-            onClick={(e) => handleCategoryNav(e, 'nutrition')}
-          >
-            Mix Me
-          </Link>
-          <Link
-            href="/products?category=sugar"
-            className="nav-link"
-            data-nav-filter="sugar"
-            onClick={(e) => handleCategoryNav(e, 'sugar')}
-          >
-            Sugar
-          </Link>
-          <Link
-            href="/products?category=wellness"
-            className="nav-link"
-            data-nav-filter="wellness"
-            onClick={(e) => handleCategoryNav(e, 'wellness')}
-          >
-            Drops
-          </Link>
+          {headerNavLinks.map((link) => (
+            <Link
+              key={link.key}
+              href={`/products?category=${link.key}`}
+              className={`nav-link${pathname === '/products' && activeNavKey === link.key ? ' is-active' : ''}`}
+              data-nav-filter={link.key}
+              aria-current={pathname === '/products' && activeNavKey === link.key ? 'page' : undefined}
+              onClick={(e) => handleCategoryNav(e, link.key)}
+            >
+              {link.label}
+            </Link>
+          ))}
           <Link href="/reels" className="nav-link">
             Reels <span className="nav-badge-hot">NEW</span>
           </Link>
@@ -338,36 +384,28 @@ export const Header: React.FC<HeaderProps> = ({ settings }) => {
           </span>
           <span>All Products</span> <i className="ph ph-arrow-right"></i>
         </Link>
-        <Link href="/products?category=ghee" onClick={(e) => handleMobileCategoryNav(e, 'ghee')}>
-          <span className="mobile-nav__visual">
-            <img src="/assets/icons/navigation/ghee.webp" alt="" width={38} height={38} loading="lazy" />
-          </span>
-          <span>A2 Gir Cow Ghee</span> <i className="ph ph-arrow-right"></i>
-        </Link>
-        <Link href="/products?category=honey" onClick={(e) => handleMobileCategoryNav(e, 'honey')}>
-          <span className="mobile-nav__visual">
-            <img src="/assets/icons/navigation/honey.webp" alt="" width={38} height={38} loading="lazy" />
-          </span>
-          <span>Raw Forest Honey</span> <i className="ph ph-arrow-right"></i>
-        </Link>
-        <Link href="/products?category=nutrition" onClick={(e) => handleMobileCategoryNav(e, 'nutrition')}>
-          <span className="mobile-nav__visual">
-            <img src="/assets/icons/navigation/mixme.webp" alt="" width={38} height={38} loading="lazy" />
-          </span>
-          <span>Mix Me Nutrition</span> <i className="ph ph-arrow-right"></i>
-        </Link>
-        <Link href="/products?category=sugar" onClick={(e) => handleMobileCategoryNav(e, 'sugar')}>
-          <span className="mobile-nav__visual">
-            <img src="/assets/icons/navigation/sugar.webp" alt="" width={38} height={38} loading="lazy" />
-          </span>
-          <span>Natural Sugar</span> <i className="ph ph-arrow-right"></i>
-        </Link>
-        <Link href="/products?category=wellness" onClick={(e) => handleMobileCategoryNav(e, 'wellness')}>
-          <span className="mobile-nav__visual">
-            <img src="/assets/icons/navigation/drops.webp" alt="" width={38} height={38} loading="lazy" />
-          </span>
-          <span>Wellness Drops</span> <i className="ph ph-arrow-right"></i>
-        </Link>
+        {headerNavLinks.map((link) => (
+          <Link
+            key={link.key}
+            href={`/products?category=${link.key}`}
+            data-nav-filter={link.key}
+            onClick={(e) => handleMobileCategoryNav(e, link.key)}
+          >
+            <span className="mobile-nav__visual">
+              <img
+                src={`/assets/icons/navigation/${link.key}.webp`}
+                alt=""
+                width={38}
+                height={38}
+                loading="lazy"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = '/assets/icons/navigation/products.webp';
+                }}
+              />
+            </span>
+            <span>{link.label}</span> <i className="ph ph-arrow-right"></i>
+          </Link>
+        ))}
         <Link href="/reels" onClick={() => setMobileMenuOpen(false)}>
           <span className="mobile-nav__visual">
             <img src="/assets/icons/navigation/reels.webp" alt="" width={38} height={38} loading="lazy" />

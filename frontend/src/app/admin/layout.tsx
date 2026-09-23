@@ -61,8 +61,17 @@ function AdminShell({ children }: { children: React.ReactNode }) {
   const isLoginPage = pathname === '/admin/login';
   const isRegisterPage = pathname === '/admin/register';
   const isPublicPage = isLoginPage || isRegisterPage;
-  const currentView = pathname === '/admin/loyalty' ? 'loyalty' : (searchParams.get('view') || 'dashboard');
-  const pageTitle = VIEW_TITLES[currentView] || 'Control Centre';
+  const isProductFormPage = pathname === '/admin/products/new' || pathname?.startsWith('/admin/products/');
+  const currentView = pathname === '/admin/loyalty'
+    ? 'loyalty'
+    : isProductFormPage
+      ? 'products'
+      : (searchParams.get('view') || 'dashboard');
+  const pageTitle = pathname === '/admin/products/new'
+    ? 'Add Catalog Item'
+    : pathname?.startsWith('/admin/products/') && pathname !== '/admin/products/new'
+      ? 'Edit Catalog Item'
+      : (VIEW_TITLES[currentView] || 'Control Centre');
 
   useEffect(() => {
     if (!loading && !admin && !isPublicPage) {
