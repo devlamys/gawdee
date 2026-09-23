@@ -1,0 +1,3011 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { adminApi } from '@/lib/admin-api';
+import { money } from '@/lib/utils';
+import { formatOrderTotal, formatPaise } from '@/lib/loyalty';
+import { CATEGORY_ICON_OPTIONS, isImageIconValue } from '@/lib/catalog';
+
+// Mirrors backend make_slug: lowercase, non-alphanumerics → hyphen.
+function autoSlug(name: string): string {
+  return (name || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function AdminPageContent() {  const searchParams = useSearchParams();
+  const view = searchParams.get('view') || 'dashboard';
+
+  const [loading, setLoading] = useState(true);
+  const [flash, setFlash] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  // View Specific State
+  const [stats, setStats] = useState<any>(null);
+  const [products, setProducts] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
+  const [customerReviews, setCustomerReviews] = useState<any[]>([]);
+  const [reels, setReels] = useState<any[]>([]);
+  const [offers, setOffers] = useState<any[]>([]);
+  const [combos, setCombos] = useState<any[]>([]);
+  const [comboProducts, setComboProducts] = useState<any[]>([]);
+  const [banners, setBanners] = useState<any[]>([]);
+  const [bannersTwo, setBannersTwo] = useState<any[]>([]);
+  const [testimonials, setTestimonials] = useState<any[]>([]);
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [blogPosts, setBlogPosts] = useState<any[]>([]);
+  const [settings, setSettings] = useState<Record<string, any>>({});
+
+  // Filter state for orders
+  const [orderFilter, setOrderFilter] = useState('all');
+  const [orderSearch, setOrderSearch] = useState('');
+
+  // Review list controls are submitted explicitly so the table never races
+  // older search requests while an administrator is still typing.
+  const [reviewSearch, setReviewSearch] = useState('');
+  const [reviewSort, setReviewSort] = useState('newest');
+
+  // Filter state for categories
+  const [categorySearch, setCategorySearch] = useState('');
+
+
+  // Modal / Form state
+  const [activeModal, setActiveModal] = useState<string | null>(null);
+  const [modalData, setModalData] = useState<any>({});
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [iconPickerOpen, setIconPickerOpen] = useState(false);
+  const [iconMode, setIconMode] = useState<'icon' | 'image'>('icon');
+
+  const showFlash = (message: string, type: 'success' | 'error' = 'success') => {
+    setFlash({ message, type });
+    setTimeout(() => setFlash(null), 4000);
+  };
+
+  const handleUploadImage = async (file: File, callback: (url: string) => void, folder: string = 'products') => {
+    setUploadingImage(true);
+    try {
+      const res = await adminApi.uploadMedia(file, folder);
+      const url = res?.file_path || res?.path || res?.url;
+      if (res?.ok && url) {
+        callback(url);
+        showFlash('Image uploaded successfully');
+      } else {
+        throw new Error(res?.detail || 'Upload failed');
+      }
+    } catch (err: any) {
+      showFlash(err.message || 'Image upload error', 'error');
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const loadViewData = async () => {
+    setLoading(true);
+    try {
+      if (view === 'dashboard') {
+        const [statsRes, settingsRes] = await Promise.all([
+          adminApi.getStats(),
+          adminApi.getSettings().catch(() => ({ ok: false })),
+        ]);
+        if (statsRes?.ok) setStats(statsRes);
+        if (settingsRes?.ok) setSettings((settingsRes as any).settings || {});
+      } else if (view === 'products') {
+        const [res, catRes] = await Promise.all([
+          adminApi.catalogAdminItems().catch((e: any) => {
+            throw new Error(e?.message || 'Unable to load catalogue items.');
+          }),
+          adminApi.getCategories().catch(() => ({ ok: false, categories: [] })),
+        ]);
+        if (res?.ok) setProducts(res.items || []);
+        if (catRes?.ok) setCategories(catRes.categories || []);
+      } else if (view === 'categories') {
+        const [catRes, itemsRes] = await Promise.all([
+          adminApi.getCategories(),
+          adminApi.catalogAdminItems().catch(() => ({ ok: false, items: [] })),
+        ]);
+        if (catRes?.ok) setCategories(catRes.categories || []);
+        if (itemsRes?.ok) setProducts(itemsRes.items || []);
+      } else if (view === 'orders') {
+        const res = await adminApi.getOrders(orderFilter, orderSearch);
+        if (res?.ok) setOrders(res.orders || []);
+      } else if (view === 'customer_reviews') {
+        const res = await adminApi.getCustomerReviews(reviewSearch, reviewSort);
+        if (res?.ok) setCustomerReviews(res.reviews || []);
+      } else if (view === 'reels') {
+        const res = await adminApi.getReels();
+        if (res?.ok) setReels(res.reels || []);
+      } else if (view === 'offers') {
+        const res = await adminApi.getOffers();
+        if (res?.ok) setOffers(res.offers || []);
+      } else if (view === 'combos') {
+        const [combosRes, itemsRes] = await Promise.all([
+          adminApi.getCombos(),
+          adminApi.getItems().catch(() => null),
+        ]);
+        if (combosRes?.ok) setCombos(combosRes.combos || []);
+        const items = itemsRes?.items || itemsRes?.products || [];
+        setComboProducts(Array.isArray(items) ? items : []);
+      } else if (view === 'banners') {
+        const res = await adminApi.getBanners();
+        if (res?.ok) setBanners(res.banners || []);
+      } else if (view === 'banners_two') {
+        const res = await adminApi.getBannersTwo();
+        if (res?.ok) setBannersTwo(res.banners || []);
+      } else if (view === 'testimonials') {
+        const res = await adminApi.getTestimonials();
+        if (res?.ok) setTestimonials(res.testimonials || []);
+      } else if (view === 'reviews') {
+        const res = await adminApi.getReviews();
+        if (res?.ok) setReviews(res.reviews || []);
+      } else if (view === 'blog') {
+        const res = await adminApi.getBlog();
+        if (res?.ok) setBlogPosts(res.posts || []);
+      } else if (view === 'settings' || view === 'integrations' || view === 'ai') {
+        const res = await adminApi.getSettings();
+        if (res?.ok) setSettings(res.settings || {});
+      }
+    } catch (err: any) {
+      showFlash(err.message || 'Error loading view data', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadViewData();
+  }, [view, orderFilter, reviewSort]);
+
+  // Product & Item Actions (canonical DTO rows always carry variants)
+  const handleToggleProduct = async (p: any) => {
+    try {
+      await adminApi.toggleItem(p.id);
+      showFlash('Product status updated');
+      loadViewData();
+    } catch (err: any) {
+      showFlash(err.message, 'error');
+    }
+  };
+
+  const handleDeleteProduct = async (p: any) => {
+    if (!confirm(`Are you sure you want to delete "${p.name || 'this item'}"?`)) return;
+    try {
+      await adminApi.deleteItem(p.id);
+      showFlash('Product deleted successfully');
+      loadViewData();
+    } catch (err: any) {
+      showFlash(err.message, 'error');
+    }
+  };
+
+  // Order Actions
+  const handleUpdateOrderStatus = async (orderId: number, newStatus: string) => {
+    try {
+      await adminApi.updateOrderStatus(orderId, newStatus);
+      showFlash(`Order marked as ${newStatus}`);
+      loadViewData();
+    } catch (err: any) {
+      showFlash(err.message, 'error');
+    }
+  };
+
+  const handleUpdateTracking = async (orderId: number, trackingNum: string, courier: string) => {
+    try {
+      await adminApi.updateOrderTracking(orderId, trackingNum, courier);
+      showFlash('Tracking updated successfully');
+      loadViewData();
+    } catch (err: any) {
+      showFlash(err.message, 'error');
+    }
+  };
+
+  // Settings Save
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await adminApi.saveSettings(settings);
+      showFlash('Settings saved successfully');
+    } catch (err: any) {
+      showFlash(err.message, 'error');
+    }
+  };
+
+  return (
+    <>
+      {flash && (
+        <div
+          className={`admin-alert admin-flash ${
+            flash.type === 'error' ? 'admin-alert--error' : 'admin-alert--success'
+          }`}
+          style={{ marginBottom: '1.5rem' }}
+        >
+          <i className={`ph ${flash.type === 'error' ? 'ph-warning-circle' : 'ph-check-circle'}`}></i>{' '}
+          {flash.message}
+        </div>
+      )}
+
+      {/* ──────────────────────────────────────────────────────────────────────────
+          1. DASHBOARD VIEW
+          ────────────────────────────────────────────────────────────────────────── */}
+      {view === 'dashboard' && (
+        <>
+          <div className="admin-grid admin-grid--stats">
+            <article className="stat-card">
+              <i className="ph ph-receipt"></i>
+              <span>Total orders</span>
+              <strong>{stats?.stats?.orders ?? 0}</strong>
+            </article>
+            <article className="stat-card">
+              <i className="ph ph-currency-inr"></i>
+              <span>Paid revenue</span>
+              <strong>{formatPaise(stats?.stats?.revenue_paise ?? (stats?.stats?.revenue ?? 0) * 100)}</strong>
+            </article>
+            <article className="stat-card">
+              <i className="ph ph-calendar-check"></i>
+              <span>Orders today</span>
+              <strong>{stats?.stats?.today ?? 0}</strong>
+            </article>
+            <article className="stat-card">
+              <i className="ph ph-warning-circle"></i>
+              <span>Needs attention</span>
+              <strong>{stats?.stats?.attention ?? 0}</strong>
+            </article>
+          </div>
+
+          <div className="admin-grid" style={{ gridTemplateColumns: 'minmax(0,1.4fr) minmax(280px,.6fr)', marginTop: '20px' }}>
+            <section className="admin-card">
+              <div className="admin-card__header">
+                <div>
+                  <h2>Recent orders</h2>
+                  <p>Latest checkout activity</p>
+                </div>
+                <Link className="admin-button admin-button--ghost" href="/admin?view=orders">
+                  <i className="ph ph-shopping-cart"></i> All orders
+                </Link>
+              </div>
+              {stats?.recent_orders?.length > 0 ? (
+                <div className="admin-table-wrap">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Order</th>
+                        <th>Customer</th>
+                        <th>Total</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {stats?.recent_orders?.map((o: any) => (
+                        <tr key={o.id}>
+                          <td>
+                            <strong>{o.order_number}</strong>
+                            <br />
+                            <small>{o.created_at}</small>
+                          </td>
+                          <td>{o.customer_name}</td>
+                          <td>{formatPaise(o.total_paise ?? (o.total_amount ?? 0) * 100)}</td>
+                          <td>
+                            <span className={`status-pill status-pill--${o.status}`}>
+                              {o.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="empty-state">
+                  <i className="ph ph-basket"></i>
+                  <h3>No orders yet</h3>
+                  <p>Completed checkouts will appear here.</p>
+                </div>
+              )}
+            </section>
+
+            <section className="admin-card">
+              <div className="admin-card__header">
+                <div>
+                  <h2>Launch checklist</h2>
+                  <p>Integration readiness</p>
+                </div>
+              </div>
+              <div className="admin-card__body" style={{ display: 'grid', gap: '12px' }}>
+                {[
+                  ['Razorpay', !!(settings as any)?.razorpay_key_id],
+                  ['DTDC', !!(settings as any)?.dtdc_configured],
+                  ['AI provider', !!(settings as any)?.ai_configured],
+                  ['Hero banners', (stats?.stats?.products ?? 0) > 0],
+                ].map(([label, ready]) => (
+                  <div
+                    key={label as string}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: '.72rem',
+                    }}
+                  >
+                    <span>{label as string}</span>
+                    <span className={`status-pill ${ready ? '' : 'status-pill--pending'}`}>
+                      <i className={`ph ${ready ? 'ph-check' : 'ph-clock'}`}></i>{' '}
+                      {ready ? 'Ready' : 'Setup needed'}
+                    </span>
+                  </div>
+                ))}
+                <Link className="admin-button admin-button--secondary" href="/admin?view=integrations">
+                  Configure integrations
+                </Link>
+              </div>
+            </section>
+          </div>
+        </>
+      )}
+
+      {/* ──────────────────────────────────────────────────────────────────────────
+          2. PRODUCTS VIEW
+          ────────────────────────────────────────────────────────────────────────── */}
+      {view === 'products' && (
+        <section className="admin-card">
+          <div className="admin-card__header">
+            <div>
+              <h2>Storefront catalogue ({products.length} items)</h2>
+              <p>Manage product items, size variants, inventory SKUs, and pricing.</p>
+            </div>
+            <Link
+              className="admin-button admin-button--primary"
+              href="/admin/products/new"
+            >
+              <i className="ph ph-plus"></i> Add item &amp; variants
+            </Link>
+          </div>
+
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Category</th>
+                  <th>Variants &amp; Sizes</th>
+                  <th>Price Range</th>
+                  <th>Stock</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {products.map((p) => {
+                  const variants = Array.isArray(p.variants) ? p.variants : [];
+                  const hasVariants = variants.length > 0;
+                  const totalStock = hasVariants
+                    ? variants.reduce((acc: number, v: any) => acc + (Number(v.stock) || 0), 0)
+                    : 0;
+                  const prices = variants.map((v: any) => Number(v.sellingPrice) || 0);
+                  const minPrice = hasVariants ? Math.min(...prices) : 0;
+                  const maxPrice = hasVariants ? Math.max(...prices) : 0;
+                  const categoryName = p.categoryObj?.name || p.category || '—';
+
+                  return (
+                    <tr key={p.id}>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <span style={{ display: 'flex', alignItems: 'center' }}>
+                            <img
+                              src={p.image ? `/${p.image.replace(/^\//, '')}` : '/assets/images/logo.png'}
+                              alt={p.name}
+                              title="Item image"
+                              style={{ width: '44px', height: '44px', objectFit: 'contain', borderRadius: '8px', background: '#f8faf9', padding: '2px', border: '1px solid #e1e7e2' }}
+                            />
+                            {(p.hoverImageUrl || p.hoverImage) && (
+                              <img
+                                src={`/${String(p.hoverImageUrl || p.hoverImage).replace(/^\//, '')}`}
+                                alt=""
+                                title="Hover image"
+                                style={{ width: '28px', height: '28px', objectFit: 'contain', borderRadius: '8px', background: '#f8faf9', padding: '2px', border: '1px dashed #b9c6bd', marginLeft: '-10px', marginTop: '18px' }}
+                              />
+                            )}
+                          </span>
+                          <div>
+                            <strong>{p.full_name || p.name}</strong>
+                            {p.flavor && <small style={{ display: 'block', color: '#556960' }}>{p.flavor}</small>}
+                            <small style={{ display: 'block', color: '#888' }}>Slug: {p.slug || p.id}</small>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <span className="status-pill" style={{ background: '#eef5f1', color: '#075f37' }}>
+                          {categoryName}
+                        </span>
+                      </td>
+                      <td>
+                        {hasVariants ? (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', maxWidth: '260px' }}>
+                            {variants.map((v: any, vi: number) => (
+                              <span
+                                key={v.id ?? vi}
+                                style={{
+                                  fontSize: '0.62rem',
+                                  padding: '2px 7px',
+                                  borderRadius: '6px',
+                                  background: Number(v.stock) > 0 ? '#faf6f0' : '#fbeaea',
+                                  border: '1px solid #ebd9c0',
+                                  color: '#6e4c19',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                }}
+                                title={`SKU: ${v.sku || 'Auto'} | Stock: ${v.stock} | MRP: ₹${v.mrp} | Selling: ₹${v.sellingPrice} | Discount: ${v.discountPercent ?? v.discount ?? 0}%`}
+                              >
+                                <strong>{v.variantName}</strong>
+                                <small style={{ color: '#005c4e', fontWeight: 700 }}>₹{v.sellingPrice}</small>
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span style={{ color: '#b00' }}>No variants</span>
+                        )}
+                      </td>
+                      <td>
+                        {hasVariants ? (
+                          <div>
+                            <strong>
+                              ₹{minPrice.toLocaleString('en-IN')}
+                              {minPrice !== maxPrice && ` - ₹${maxPrice.toLocaleString('en-IN')}`}
+                            </strong>
+                            <small style={{ display: 'block', color: '#888', fontSize: '0.62rem' }}>
+                              {variants.length} variant{variants.length > 1 ? 's' : ''}
+                            </small>
+                          </div>
+                        ) : (
+                          <span style={{ color: '#b00' }}>—</span>
+                        )}
+                      </td>
+                      <td>
+                        <span
+                          className={`status-pill ${
+                            totalStock > 10 ? 'status-pill--paid' : totalStock > 0 ? 'status-pill--pending' : 'status-pill--cancelled'
+                          }`}
+                        >
+                          {totalStock > 0 ? `${totalStock} in stock` : 'Out of stock'}
+                        </span>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleProduct(p)}
+                          className={`status-pill ${
+                            p.is_active ? 'status-pill--delivered' : 'status-pill--pending'
+                          }`}
+                          style={{ cursor: 'pointer', border: 'none' }}
+                        >
+                          {p.is_active ? 'Active' : 'Draft'}
+                        </button>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Link
+                            href={`/admin/products/${p.id}`}
+                            className="admin-action-icon"
+                            title="Edit item & variants"
+                          >
+                            <i className="ph ph-pencil-simple"></i>
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteProduct(p)}
+                            className="admin-action-icon admin-action-icon--danger"
+                            title="Delete item"
+                          >
+                            <i className="ph ph-trash"></i>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* ──────────────────────────────────────────────────────────────────────────
+          3. CATEGORIES VIEW
+          ────────────────────────────────────────────────────────────────────────── */}
+      {view === 'categories' && (
+        <section className="admin-card">
+          <div className="admin-card__head">
+            <div>
+              <h2>Product Categories ({categories.length})</h2>
+              <p>Organize storefront collections and navigation filters.</p>
+            </div>
+            <button
+              className="admin-button admin-button--primary"
+              type="button"
+              onClick={() => {
+                setModalData({ name: '', filter: '', image_url: '', icon: 'ph-squares-four', icon_image: '', parent_id: null, sort_order: 10, is_active: true });
+                setIconPickerOpen(false);
+                setIconMode('icon');
+                setActiveModal('category');
+              }}
+            >
+              <i className="ph ph-plus"></i> New category
+            </button>
+          </div>
+
+          <div className="order-filter-bar" style={{ display: 'flex', gap: '12px', margin: '0 0 1rem' }}>
+            <div className="field-icon" style={{ flex: 1, maxWidth: '360px' }}>
+              <i className="ph ph-magnifying-glass"></i>
+              <input
+                type="search"
+                placeholder="Search categories by name or filter key..."
+                value={categorySearch}
+                onChange={(e) => setCategorySearch(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Image</th>
+                  <th>Category Name</th>
+                  <th>Filter Key</th>
+                  <th>Parent</th>
+                  <th>Items</th>
+                  <th>Order</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {categories
+                  .filter((c) => {
+                    const q = categorySearch.trim().toLowerCase();
+                    if (!q) return true;
+                    return (c.name || '').toLowerCase().includes(q) || (c.filter || '').toLowerCase().includes(q);
+                  })
+                  .map((c) => {
+                    const itemCount = products.filter((p: any) => p.categoryId === c.id).length;
+                    const img = c.imageUrl || c.image;
+                    const pid = c.parentId ?? c.parent_id ?? null;
+                    const parentName = pid ? categories.find((q: any) => q.id === pid)?.name || `#${pid}` : null;
+                    const childCount = categories.filter((q: any) => (q.parentId ?? q.parent_id) === c.id).length;
+                    return (
+                      <tr key={c.id}>
+                        <td>
+                          {img ? (
+                            <img
+                              src={`/${String(img).replace(/^\//, '')}`}
+                              alt={c.name}
+                              style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '8px', border: '1px solid #e1e7e2', background: '#f8faf9' }}
+                            />
+                          ) : (
+                            <span style={{ color: '#aaa', fontSize: '0.75rem' }}>—</span>
+                          )}
+                        </td>
+                        <td>
+                          <strong>{c.name}</strong>
+                        </td>
+                        <td>
+                          <code>{c.filter}</code>
+                        </td>
+                        <td>
+                          {parentName ? (
+                            <div>
+                              <small style={{ display: 'block', color: '#888' }}>under</small>
+                              <strong style={{ fontSize: '0.8rem' }}>{parentName}</strong>
+                            </div>
+                          ) : (
+                            <span style={{ color: '#aaa' }}>—</span>
+                          )}
+                          {childCount > 0 && (
+                            <span className="status-pill" style={{ background: '#eef3fb', color: '#2b4d8f', marginTop: '4px', display: 'inline-block' }}>
+                              {childCount} subcategor{childCount > 1 ? 'ies' : 'y'}
+                            </span>
+                          )}
+                        </td>
+                        <td>{itemCount}</td>
+                        <td>{c.sort_order ?? c.sortOrder ?? 0}</td>
+                        <td>
+                          <span
+                            className={`status-pill ${
+                              c.isActive ?? c.is_active ? 'status-pill--paid' : 'status-pill--pending'
+                            }`}
+                          >
+                            {c.isActive ?? c.is_active ? 'Active' : 'Disabled'}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setModalData({
+                                  id: c.id,
+                                  name: c.name || '',
+                                  filter: c.filter || '',
+                                  image_url: c.imageUrl || c.image || '',
+                                  icon: isImageIconValue(c.icon) ? 'ph-squares-four' : (c.icon || 'ph-squares-four'),
+                                  icon_image: isImageIconValue(c.icon) ? (c.icon || '') : '',
+                                  parent_id: c.parentId ?? c.parent_id ?? null,
+                                  sort_order: c.sort_order ?? c.sortOrder ?? 0,
+                                  is_active: (c.isActive ?? c.is_active) ? true : false,
+                                });
+                                setIconPickerOpen(false);
+                                setIconMode(isImageIconValue(c.icon) ? 'image' : 'icon');
+                                setActiveModal('category');
+                              }}
+                              className="admin-action-icon"
+                              title="Edit category"
+                            >
+                              <i className="ph ph-pencil-simple"></i>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (confirm(`Delete category "${c.name}"? Items linked to it will be unlinked, not deleted.`)) {
+                                  try {
+                                    await adminApi.deleteCategory(c.id);
+                                    showFlash('Category deleted');
+                                    loadViewData();
+                                  } catch (err: any) {
+                                    showFlash(err.message || 'Failed to delete category', 'error');
+                                  }
+                                }
+                              }}
+                              className="admin-action-icon admin-action-icon--danger"
+                              title="Delete category"
+                            >
+                              <i className="ph ph-trash"></i>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* ──────────────────────────────────────────────────────────────────────────
+          4. ORDERS WORKBENCH VIEW
+          ────────────────────────────────────────────────────────────────────────── */}
+      {view === 'orders' && (
+        <section className="admin-card">
+          <div className="admin-card__head orders-heading">
+            <div>
+              <h2>Orders &amp; Fulfilment Workbench</h2>
+              <p>Process payments, update courier tracking and deliver packages.</p>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {['all', 'pending', 'processing', 'shipped', 'delivered', 'cancelled'].map((st) => (
+                <button
+                  key={st}
+                  type="button"
+                  onClick={() => setOrderFilter(st)}
+                  className={`admin-button ${
+                    orderFilter === st ? 'admin-button--primary' : 'admin-button--subtle'
+                  }`}
+                  style={{ textTransform: 'capitalize' }}
+                >
+                  {st}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="order-filter-bar" style={{ display: 'flex', gap: '12px', margin: '1rem 0' }}>
+            <div className="field-icon" style={{ flex: 1 }}>
+              <i className="ph ph-magnifying-glass"></i>
+              <input
+                type="search"
+                placeholder="Search orders by number, customer, email or phone..."
+                value={orderSearch}
+                onChange={(e) => setOrderSearch(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && loadViewData()}
+              />
+            </div>
+            <button className="admin-button admin-button--secondary" type="button" onClick={loadViewData}>
+              Filter
+            </button>
+          </div>
+
+          <div className="admin-table-wrap">
+            {orders.length === 0 ? (
+              <div style={{ padding: '3rem', textAlign: 'center', color: '#888' }}>
+                <i className="ph ph-receipt" style={{ fontSize: '2.5rem', marginBottom: '0.8rem' }}></i>
+                <h3>No matching orders found</h3>
+                <p>Orders placed via the storefront checkout will appear here.</p>
+              </div>
+            ) : (
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Order #</th>
+                    <th>Customer</th>
+                    <th>Destination</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                    <th>Tracking</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {orders.map((o) => (
+                    <tr key={o.id}>
+                      <td>
+                        <strong>#{o.order_number}</strong>
+                        <small style={{ display: 'block', color: '#888' }}>
+                          {new Date(o.created_at).toLocaleDateString('en-IN')}
+                        </small>
+                      </td>
+                      <td>
+                        <strong>{o.customer_name}</strong>
+                        <small style={{ display: 'block', color: '#666' }}>{o.phone}</small>
+                        <small style={{ display: 'block', color: '#999' }}>{o.email}</small>
+                      </td>
+                      <td>
+                        {o.city}, {o.state} - {o.pincode}
+                      </td>
+                      <td>
+                        <strong>{formatOrderTotal(o)}</strong>
+                        <small style={{ display: 'block', color: '#66756c' }}>
+                          Products {money(o.subtotal)} · Shipping {money(o.shipping)}
+                          {Number(o.discount || 0) > 0 ? ` · Offer −${money(o.discount)}` : ''}
+                        </small>
+                        {Number(o.loyalty_discount_paise || 0) > 0 && (
+                          <small style={{ display: 'block', color: '#006f5e' }}>
+                            Loyalty −{formatPaise(o.loyalty_discount_paise)}
+                          </small>
+                        )}
+                        {Number(o.loyalty_coins_earned || 0) > 0 && (
+                          <small style={{ display: 'block', color: '#006f5e' }}>
+                            +{o.loyalty_coins_earned} loyalty coin{Number(o.loyalty_coins_earned) === 1 ? '' : 's'} {String(o.loyalty_earn_status || '').toLowerCase()}
+                          </small>
+                        )}
+                        <span
+                          className={`status-pill ${
+                            o.payment_status === 'paid' ? 'status-pill--paid' : 'status-pill--pending'
+                          }`}
+                          style={{ display: 'block', width: 'fit-content', marginTop: '4px' }}
+                        >
+                          {o.payment_status}
+                        </span>
+                      </td>
+                      <td>
+                        <select
+                          value={o.status}
+                          onChange={(e) => handleUpdateOrderStatus(o.id, e.target.value)}
+                          style={{
+                            padding: '4px 8px',
+                            borderRadius: '6px',
+                            border: '1px solid #ccc',
+                            fontSize: '0.8rem',
+                          }}
+                        >
+                          <option value="pending">Pending</option>
+                          <option value="processing">Processing</option>
+                          <option value="shipped">Shipped</option>
+                          <option value="delivered">{o.payment_method === 'cod' ? 'Delivered (COD collected)' : 'Delivered'}</option>
+                          <option value="cancelled">Cancelled</option>
+                        </select>
+                      </td>
+                      <td>
+                        {o.tracking_number ? (
+                          <span>
+                            <strong>{o.courier_name || 'Courier'}</strong>: {o.tracking_number}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="admin-button admin-button--subtle"
+                            style={{ padding: '2px 8px', fontSize: '0.75rem' }}
+                            onClick={() => {
+                              const tNum = prompt('Enter Tracking Number / AWB:');
+                              if (tNum) {
+                                const cName = prompt('Enter Courier Partner (e.g. Shiprocket, DTDC):') || 'DTDC';
+                                handleUpdateTracking(o.id, tNum, cName);
+                              }
+                            }}
+                          >
+                            + Add AWB
+                          </button>
+                        )}
+                      </td>
+                      <td>
+                        <Link
+                          href={`/account/orders/${o.order_number}`}
+                          target="_blank"
+                          className="admin-action-icon"
+                          title="View customer invoice"
+                        >
+                          <i className="ph ph-file-text"></i>
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* ──────────────────────────────────────────────────────────────────────────
+          5. REELS VIEW
+          ────────────────────────────────────────────────────────────────────────── */}
+      {view === 'customer_reviews' && (
+        <section className="admin-card">
+          <div className="admin-card__head">
+            <div>
+              <h2>Customer reviews</h2>
+              <p>Verified product feedback from customers with a completed purchase.</p>
+            </div>
+            <span className="status-pill status-pill--paid">{customerReviews.length} reviews</span>
+          </div>
+
+          <div className="review-filter-bar">
+            <div className="field-icon review-search-field">
+              <i className="ph ph-magnifying-glass"></i>
+              <input
+                id="customer-review-search"
+                type="search"
+                placeholder="Search name, email, product or review..."
+                value={reviewSearch}
+                onChange={(e) => setReviewSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) loadViewData();
+                }}
+              />
+              {reviewSearch && (
+                <button
+                  type="button"
+                  className="review-search-clear"
+                  aria-label="Clear review search"
+                  title="Clear search"
+                  onClick={() => {
+                    setReviewSearch('');
+                    adminApi.getCustomerReviews('', reviewSort).then((res: any) => {
+                      if (res?.ok) setCustomerReviews(res.reviews || []);
+                    }).catch((err: Error) => showFlash(err.message, 'error'));
+                    setTimeout(() => (document.getElementById('customer-review-search') as HTMLInputElement | null)?.focus(), 0);
+                  }}
+                ><i className="ph ph-x"></i></button>
+              )}
+            </div>
+            <button className="admin-button admin-button--secondary" type="button" onClick={loadViewData}>
+              <i className="ph ph-magnifying-glass"></i> Search
+            </button>
+          </div>
+
+          <div className="admin-table-wrap">
+            {customerReviews.length === 0 ? (
+              <div className="empty-state">
+                <i className="ph ph-star"></i>
+                <h3>No matching reviews</h3>
+                <p>Purchased-customer reviews will appear here.</p>
+              </div>
+            ) : (
+              <table className="admin-table review-table">
+                <thead><tr>
+                  <th aria-sort={reviewSort === 'product' ? 'ascending' : 'none'}><button type="button" onClick={() => setReviewSort('product')}>Product <i className="ph ph-arrows-down-up"></i></button></th>
+                  <th aria-sort={reviewSort === 'name' ? 'ascending' : 'none'}><button type="button" onClick={() => setReviewSort('name')}>Customer <i className="ph ph-arrows-down-up"></i></button></th>
+                  <th aria-sort={reviewSort === 'email' ? 'ascending' : 'none'}><button type="button" onClick={() => setReviewSort('email')}>Email <i className="ph ph-arrows-down-up"></i></button></th>
+                  <th aria-sort={reviewSort.startsWith('rating') ? (reviewSort === 'rating_high' ? 'descending' : 'ascending') : 'none'}><button type="button" onClick={() => setReviewSort(reviewSort === 'rating_high' ? 'rating_low' : 'rating_high')}>Rating <i className="ph ph-arrows-down-up"></i></button></th>
+                  <th>Review</th>
+                  <th aria-sort={reviewSort === 'oldest' ? 'ascending' : reviewSort === 'newest' ? 'descending' : 'none'}><button type="button" onClick={() => setReviewSort(reviewSort === 'newest' ? 'oldest' : 'newest')}>Date <i className="ph ph-arrows-down-up"></i></button></th>
+                </tr></thead>
+                <tbody>
+                  {customerReviews.map((review) => (
+                    <tr key={review.id}>
+                      <td><Link href={`/products/${review.product_slug || review.product_id}`} target="_blank"><strong>{review.product_name || review.product_id}</strong></Link></td>
+                      <td><strong>{review.name}</strong>{Boolean(review.verified_purchase) && <small className="review-verified"><i className="ph-fill ph-seal-check"></i> Purchased</small>}</td>
+                      <td>{review.email}</td>
+                      <td><span className="review-rating" aria-label={`${review.rating} out of 5 stars`}>{review.rating} <i className="ph-fill ph-star"></i></span></td>
+                      <td className="review-copy">{review.review}</td>
+                      <td>{new Date(review.created_at).toLocaleDateString('en-IN')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </section>
+      )}
+
+      {view === 'reels' && (
+        <section className="admin-card">
+          <div className="admin-card__head">
+            <div>
+              <h2>Video Reels &amp; Shoppable Media ({reels.length})</h2>
+              <p>Manage Instagram-style video clips linking to catalog products.</p>
+            </div>
+            <button
+              className="admin-button admin-button--primary"
+              type="button"
+              onClick={() => {
+                setModalData({ title: '', file_path: '', poster_path: '', external_url: '', product_slug: '', sort_order: 0 });
+                setActiveModal('reel');
+              }}
+            >
+              <i className="ph ph-plus"></i> Add Reel
+            </button>
+          </div>
+
+          <div className="reel-card-grid" style={{ marginTop: '1rem' }}>
+            {reels.map((r) => (
+              <div key={r.id} className="reel-card-admin">
+                <div style={{ height: '220px', background: '#000', position: 'relative' }}>
+                  {r.file_path ? (
+                    <video
+                      src={`/${r.file_path.replace(/^\//, '')}`}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      muted
+                      loop
+                      playsInline
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        height: '100%',
+                        display: 'grid',
+                        placeItems: 'center',
+                        color: '#666',
+                      }}
+                    >
+                      <i className="ph ph-video" style={{ fontSize: '3rem' }}></i>
+                    </div>
+                  )}
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: '10px',
+                      left: '10px',
+                      background: 'rgba(0,0,0,0.75)',
+                      color: '#fff',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      fontSize: '0.7rem',
+                    }}
+                  >
+                    #{r.sort_order}
+                  </span>
+                </div>
+                <div style={{ padding: '14px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                  <strong style={{ fontSize: '0.95rem' }}>{r.title}</strong>
+                  {r.product_slug && (
+                    <small style={{ color: '#009a84', marginTop: '4px' }}>
+                      <i className="ph ph-tag"></i> {r.product_slug}
+                    </small>
+                  )}
+                  <div style={{ marginTop: 'auto', paddingTop: '10px', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                    <button
+                      type="button"
+                      title="Edit reel"
+                      onClick={() => {
+                        setModalData({ ...r });
+                        setActiveModal('reel');
+                      }}
+                      className="admin-action-icon"
+                    >
+                      <i className="ph ph-pencil-simple"></i>
+                    </button>
+                    <button
+                      type="button"
+                      title="Delete reel"
+                      onClick={async () => {
+                        if (confirm('Delete this reel?')) {
+                          await adminApi.deleteReel(r.id);
+                          loadViewData();
+                        }
+                      }}
+                      className="admin-action-icon admin-action-icon--danger"
+                    >
+                      <i className="ph ph-trash"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {view === 'offers' && (
+        <section className="admin-card">
+          <div className="admin-card__head">
+            <div>
+              <h2>Hot Deals &amp; Offers ({offers.length})</h2>
+              <p>Manage homepage promo cards and dedicated offers page entries.</p>
+            </div>
+            <button
+              className="admin-button admin-button--primary"
+              type="button"
+              onClick={() => {
+                setModalData({
+                  title: '',
+                  subtitle: '',
+                  description: '',
+                  badge: 'HOT DEAL',
+                  image_url: '',
+                  link_url: '/products',
+                  cta_label: 'Shop now',
+                  sort_order: offers.length,
+                  is_active: true,
+                });
+                setActiveModal('offer');
+              }}
+            >
+              <i className="ph ph-plus"></i> Add Offer
+            </button>
+          </div>
+
+          <div className="admin-table-wrap" style={{ marginTop: '1rem' }}>
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Offer</th>
+                  <th>Badge</th>
+                  <th>Link</th>
+                  <th>Image</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {offers.map((offer) => (
+                  <tr key={offer.id}>
+                    <td>
+                      <strong>{offer.title || 'Untitled offer'}</strong>
+                      {offer.subtitle && <div style={{ color: '#009a84', fontSize: '0.74rem', marginTop: '4px' }}>{offer.subtitle}</div>}
+                    </td>
+                    <td>{offer.badge || 'HOT DEAL'}</td>
+                    <td style={{ maxWidth: '220px', wordBreak: 'break-word' }}>{offer.link_url || '/products'}</td>
+                    <td>
+                      {offer.image_url ? (
+                        <img
+                          src={offer.image_url.startsWith('http') ? offer.image_url : `/${offer.image_url.replace(/^\//, '')}`}
+                          alt={offer.title || 'Offer'}
+                          style={{ width: '56px', height: '56px', objectFit: 'cover', borderRadius: '10px', border: '1px solid #e1e7e2', background: '#f6f8f6' }}
+                        />
+                      ) : (
+                        <span style={{ color: '#999', fontSize: '0.8rem' }}>No image</span>
+                      )}
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button
+                          type="button"
+                          title="Edit offer"
+                          onClick={() => {
+                            setModalData({ ...offer });
+                            setActiveModal('offer');
+                          }}
+                          className="admin-action-icon"
+                        >
+                          <i className="ph ph-pencil-simple"></i>
+                        </button>
+                        <button
+                          type="button"
+                          title="Delete offer"
+                          onClick={async () => {
+                            if (confirm('Delete this offer?')) {
+                              await adminApi.deleteOffer(offer.id);
+                              loadViewData();
+                            }
+                          }}
+                          className="admin-action-icon admin-action-icon--danger"
+                        >
+                          <i className="ph ph-trash"></i>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* ──────────────────────────────────────────────────────────────────────────
+          5B. COMBOS VIEW (curated bundles for `nhp-combos__grid`)
+          ────────────────────────────────────────────────────────────────────────── */}
+      {view === 'combos' && (
+        <section className="admin-card">
+          <div className="admin-card__head">
+            <div>
+              <h2>Curated Combos ({combos.length})</h2>
+              <p>Manage the “Better Together” bundles on the new homepage. Each combo has its own image, title, category label, two products, description, price and discount.</p>
+            </div>
+            <button
+              className="admin-button admin-button--primary"
+              type="button"
+              onClick={() => {
+                setModalData({
+                  title: '',
+                  category: '',
+                  description: '',
+                  image: '',
+                  product_one_ref: '',
+                  product_two_ref: '',
+                  selling_price: '',
+                  mrp: '',
+                  discount: '',
+                  sort_order: combos.length,
+                  is_active: true,
+                });
+                setActiveModal('combo');
+              }}
+            >
+              <i className="ph ph-plus"></i> Add Combo
+            </button>
+          </div>
+
+          <div className="admin-table-wrap" style={{ marginTop: '1rem' }}>
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Combo</th>
+                  <th>Category</th>
+                  <th>Products</th>
+                  <th>Price</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {combos.map((combo) => (
+                  <tr key={combo.id}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        {combo.image ? (
+                          <img
+                            src={combo.image.startsWith('http') ? combo.image : `/${combo.image.replace(/^\//, '')}`}
+                            alt={combo.title || 'Combo'}
+                            style={{ width: '56px', height: '56px', objectFit: 'cover', borderRadius: '10px', border: '1px solid #e1e7e2', background: '#f6f8f6' }}
+                          />
+                        ) : (
+                          <span style={{ color: '#999', fontSize: '0.8rem' }}>No image</span>
+                        )}
+                        <div>
+                          <strong>{combo.title || 'Untitled combo'}</strong>
+                          {(combo.details || combo.description) && (
+                            <div style={{ color: '#7b8981', fontSize: '0.72rem', marginTop: '4px', maxWidth: '280px' }}>
+                              {(combo.details || combo.description || '').slice(0, 90)}
+                              {(combo.details || combo.description || '').length > 90 ? '…' : ''}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td>{combo.category || '—'}</td>
+                    <td style={{ fontSize: '0.74rem', maxWidth: '240px' }}>
+                      <div>1. {combo.productOne?.name || combo.product_one?.name || combo.product_one_ref || '—'}</div>
+                      <div>2. {combo.productTwo?.name || combo.product_two?.name || combo.product_two_ref || '—'}</div>
+                    </td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <strong>{money(Number(combo.sellingPrice ?? combo.selling_price ?? 0) || 0)}</strong>
+                      {Number(combo.mrp) > Number(combo.sellingPrice ?? combo.selling_price ?? 0) && (
+                        <div style={{ fontSize: '0.72rem', color: '#7b8981' }}>
+                          <s>{money(Number(combo.mrp) || 0)}</s> · SAVE {Number(combo.savePercent ?? combo.save_percent ?? 0) || 0}%
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className={`status-pill ${combo.is_active || combo.isActive ? 'status-pill--paid' : ''}`}
+                        title="Toggle visibility"
+                        onClick={async () => {
+                          try {
+                            await adminApi.toggleCombo(combo.id);
+                            loadViewData();
+                          } catch (err: any) {
+                            showFlash(err.message || 'Failed to toggle combo', 'error');
+                          }
+                        }}
+                      >
+                        {combo.is_active || combo.isActive ? 'Active' : 'Hidden'}
+                      </button>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button
+                          type="button"
+                          title="Edit combo"
+                          onClick={() => {
+                            setModalData({
+                              ...combo,
+                              selling_price: combo.sellingPrice ?? combo.selling_price ?? '',
+                              mrp: combo.mrp ?? '',
+                              discount: combo.discount ?? '',
+                              product_one_ref: combo.productOneRef || combo.product_one_ref || '',
+                              product_two_ref: combo.productTwoRef || combo.product_two_ref || '',
+                            });
+                            setActiveModal('combo');
+                          }}
+                          className="admin-action-icon"
+                        >
+                          <i className="ph ph-pencil-simple"></i>
+                        </button>
+                        <button
+                          type="button"
+                          title="Delete combo"
+                          onClick={async () => {
+                            if (confirm('Delete this combo? It will disappear from the homepage.')) {
+                              try {
+                                await adminApi.deleteCombo(combo.id);
+                                showFlash('Combo deleted');
+                                loadViewData();
+                              } catch (err: any) {
+                                showFlash(err.message || 'Failed to delete combo', 'error');
+                              }
+                            }
+                          }}
+                          className="admin-action-icon admin-action-icon--danger"
+                        >
+                          <i className="ph ph-trash"></i>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {combos.length === 0 && (
+              <p style={{ color: '#7b8981', fontSize: '0.8rem', padding: '12px 4px' }}>
+                No combos yet — click “Add Combo” to create the first bundle for the homepage grid.
+              </p>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* ──────────────────────────────────────────────────────────────────────────
+          6. BANNERS TWO (HERO 3D SLIDES)
+          ────────────────────────────────────────────────────────────────────────── */}
+      {view === 'banners_two' && (
+        <section className="admin-card">
+          <div className="admin-card__head">
+            <div>
+              <h2>Hero 3D Animated Slides ({bannersTwo.length})</h2>
+              <p>Configure the 3D rotating product slides on the homepage carousel.</p>
+            </div>
+            <button
+              className="admin-button admin-button--primary"
+              type="button"
+              onClick={() => {
+                setModalData({
+                  title: '',
+                  cat: 'Ghee',
+                  title_html: '',
+                  word: '',
+                  sub: '',
+                  price_label: '',
+                  mrp_label: '',
+                  off_badge: '',
+                  reviews_label: '',
+                  product_image: '',
+                  cart_id: '',
+                  cart_name: '',
+                  cart_price: 0,
+                  cart_image: '',
+                  sort_order: bannersTwo.length,
+                  is_active: true,
+                });
+                setActiveModal('banner_two');
+              }}
+            >
+              <i className="ph ph-plus"></i> Add Slide
+            </button>
+          </div>
+
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Slide Title</th>
+                  <th>Category</th>
+                  <th>Display Price</th>
+                  <th>Product Image</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bannersTwo.length === 0 && (
+                  <tr className="admin-table__empty">
+                    <td colSpan={5}>
+                      <i className="ph ph-film-strip" style={{ fontSize: '1.6rem', display: 'block', marginBottom: '8px' }}></i>
+                      No slides yet — click &ldquo;Add Slide&rdquo; to create the first 3D hero slide.
+                    </td>
+                  </tr>
+                )}
+                {bannersTwo.map((b) => (
+                  <tr key={b.id}>
+                    <td>
+                      <strong>{b.title}</strong>
+                    </td>
+                    <td>{b.cat}</td>
+                    <td>
+                      {b.price_label} <small style={{ color: '#999' }}>{b.mrp_label}</small>
+                    </td>
+                    <td>
+                      <img
+                        src={b.product_image ? `/${b.product_image.replace(/^\//, '')}` : '/assets/images/logo.png'}
+                        alt={b.title}
+                        style={{ width: '45px', height: '45px', objectFit: 'contain', borderRadius: '10px', border: '1px solid #e1e7e2', background: '#f6f8f6' }}
+                      />
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button
+                          type="button"
+                          title="Edit slide"
+                          onClick={() => {
+                            setModalData({ ...b });
+                            setActiveModal('banner_two');
+                          }}
+                          className="admin-action-icon"
+                        >
+                          <i className="ph ph-pencil-simple"></i>
+                        </button>
+                        <button
+                          type="button"
+                          title="Delete slide"
+                          onClick={async () => {
+                            if (confirm('Delete banner slide?')) {
+                              await adminApi.deleteBannerTwo(b.id);
+                              loadViewData();
+                            }
+                          }}
+                          className="admin-action-icon admin-action-icon--danger"
+                        >
+                          <i className="ph ph-trash"></i>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* ──────────────────────────────────────────────────────────────────────────
+          CUSTOMER REVIEWS VIEW
+          ────────────────────────────────────────────────────────────────────────── */}
+      {view === 'reviews' && (
+        <section className="admin-card">
+          <div className="admin-card__head">
+            <div>
+              <h2>Customer Reviews ({reviews.length})</h2>
+              <p>Manage product reviews from your customers.</p>
+            </div>
+          </div>
+          
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid #e1e7e2', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+            <div className="admin-input-group" style={{ marginBottom: 0, flex: 1, minWidth: '200px' }}>
+              <div className="admin-input-with-icon">
+                <i className="ph ph-magnifying-glass"></i>
+                <input 
+                  type="text" 
+                  placeholder="Search reviews by name, content..."
+                  value={reviewSearch}
+                  onChange={(e) => setReviewSearch(e.target.value)}
+                />
+              </div>
+            </div>
+            
+            <div className="admin-input-group" style={{ marginBottom: 0, width: '240px' }}>
+              <select value={reviewSort} onChange={(e) => setReviewSort(e.target.value)} className="admin-input" style={{ appearance: 'auto' }}>
+                <option value="date-desc">Newest First</option>
+                <option value="date-asc">Oldest First</option>
+                <option value="rating-desc">Highest Rated</option>
+                <option value="rating-asc">Lowest Rated</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Rating</th>
+                  <th>Review</th>
+                  <th>Customer</th>
+                  <th>Date</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reviews.length === 0 && (
+                  <tr className="admin-table__empty">
+                    <td colSpan={5}>
+                      <i className="ph ph-star" style={{ fontSize: '1.6rem', display: 'block', marginBottom: '8px' }}></i>
+                      No reviews found.
+                    </td>
+                  </tr>
+                )}
+                {reviews
+                  .filter(r => !reviewSearch || `${r.name || r.author_name} ${r.review || r.body}`.toLowerCase().includes(reviewSearch.toLowerCase()))
+                  .sort((a, b) => {
+                    const dateA = new Date(a.created_at || a.date || 0).getTime();
+                    const dateB = new Date(b.created_at || b.date || 0).getTime();
+                    if (reviewSort === 'date-desc') return dateB - dateA;
+                    if (reviewSort === 'date-asc') return dateA - dateB;
+                    if (reviewSort === 'rating-desc') return (b.rating || 0) - (a.rating || 0);
+                    if (reviewSort === 'rating-asc') return (a.rating || 0) - (b.rating || 0);
+                    return 0;
+                  })
+                  .map((r) => (
+                  <tr key={r.id}>
+                    <td>
+                      <div style={{ display: 'flex', color: '#f59e0b', gap: '2px' }}>
+                        {[...Array(r.rating || 5)].map((_, i) => (
+                          <i key={i} className="ph-fill ph-star"></i>
+                        ))}
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ maxWidth: '350px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {r.review || r.body}
+                      </div>
+                    </td>
+                    <td><strong>{r.name || r.author_name}</strong></td>
+                    <td>{r.created_at || r.date ? new Date(r.created_at || r.date).toLocaleDateString() : 'N/A'}</td>
+                    <td>
+                      <button
+                        type="button"
+                        title="Delete review"
+                        onClick={async () => {
+                          if (confirm('Delete review?')) {
+                            showFlash('Review deleted (API method mocked)');
+                          }
+                        }}
+                        className="admin-action-icon admin-action-icon--danger"
+                      >
+                        <i className="ph ph-trash"></i>
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* ──────────────────────────────────────────────────────────────────────────
+          7. SETTINGS & INTEGRATIONS VIEW
+          ────────────────────────────────────────────────────────────────────────── */}
+      {(view === 'settings' || view === 'integrations' || view === 'ai') && (
+        <section className="admin-card">
+          <div className="admin-card__head">
+            <div>
+              <h2>{view === 'settings' ? 'Storefront Settings' : view === 'integrations' ? 'Integrations' : 'AI Assistant'}</h2>
+              <p>Platform parameters, contact details, and third-party API configurations.</p>
+            </div>
+          </div>
+
+          <form onSubmit={handleSaveSettings} className="admin-form" style={{ maxWidth: '640px' }}>
+            {view === 'settings' && (
+              <>
+                <div
+                  style={{
+                    marginBottom: '16px',
+                    border: '1px solid var(--line, #e2e8e4)',
+                    borderLeft: '4px solid #009a84',
+                    borderRadius: '12px',
+                    padding: '12px 14px',
+                    background: 'var(--surface, #f6faf7)',
+                  }}
+                >
+                  <label className="form-switch" style={{ padding: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={settings.use_new_homepage === '1'}
+                      onChange={(e) =>
+                        setSettings({ ...settings, use_new_homepage: e.target.checked ? '1' : '0' })
+                      }
+                    />
+                    <span><strong>Use New Home Page</strong></span>
+                  </label>
+                  <p style={{ margin: '8px 0 0', fontSize: '0.8rem', opacity: 0.75 }}>
+                    ON = new reference design (PDF + screenshots). OFF = current live homepage.
+                    Safe to toggle anytime.
+                  </p>
+                </div>
+                <div
+                  style={{
+                    marginBottom: '16px',
+                    border: '1px solid var(--line, #e2e8e4)',
+                    borderLeft: '4px solid #009a84',
+                    borderRadius: '12px',
+                    padding: '12px 14px',
+                    background: 'var(--surface, #f6faf7)',
+                  }}
+                >
+                  <label className="form-switch" style={{ padding: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={settings.show_homepage_heading !== '0'}
+                      onChange={(e) =>
+                        setSettings({ ...settings, show_homepage_heading: e.target.checked ? '1' : '0' })
+                      }
+                    />
+                    <span><strong>Show Homepage Heading</strong></span>
+                  </label>
+                  <p style={{ margin: '8px 0 0', fontSize: '0.8rem', opacity: 0.75 }}>
+                    Toggle visibility of the homepage heading on NewHomePage.
+                  </p>
+                </div>
+                <div
+                  style={{
+                    marginBottom: '16px',
+                    border: '1px solid var(--line, #e2e8e4)',
+                    borderLeft: '4px solid #009a84',
+                    borderRadius: '12px',
+                    padding: '12px 14px',
+                    background: 'var(--surface, #f6faf7)',
+                  }}
+                >
+                  <label className="form-switch" style={{ padding: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={settings.show_footer_heading !== '0'}
+                      onChange={(e) =>
+                        setSettings({ ...settings, show_footer_heading: e.target.checked ? '1' : '0' })
+                      }
+                    />
+                    <span><strong>Show Footer Heading</strong></span>
+                  </label>
+                  <p style={{ margin: '8px 0 0', fontSize: '0.8rem', opacity: 0.75 }}>
+                    Toggle visibility of the footer headings.
+                  </p>
+                </div>
+                <label>
+                  <span>Brand Name</span>
+                  <input
+                    type="text"
+                    value={settings.brand_name || 'Gawdee'}
+                    onChange={(e) => setSettings({ ...settings, brand_name: e.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>Support Email</span>
+                  <input
+                    type="email"
+                    value={settings.support_email || 'care@gawdee.com'}
+                    onChange={(e) => setSettings({ ...settings, support_email: e.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>Support Phone / WhatsApp</span>
+                  <input
+                    type="text"
+                    value={settings.support_phone || '+91 98765 43210'}
+                    onChange={(e) => setSettings({ ...settings, support_phone: e.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>Free Shipping Threshold (₹)</span>
+                  <input
+                    type="number"
+                    value={settings.free_shipping_threshold || 999}
+                    onChange={(e) => setSettings({ ...settings, free_shipping_threshold: e.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>Promo Code</span>
+                  <input
+                    type="text"
+                    value={settings.offer_code || 'FREEDOM10'}
+                    onChange={(e) => setSettings({ ...settings, offer_code: e.target.value })}
+                  />
+                </label>
+              </>
+            )}
+
+            {view === 'integrations' && (
+              <>
+                <label>
+                  <span>Shiprocket Email</span>
+                  <input
+                    type="email"
+                    value={settings.shiprocket_email || ''}
+                    onChange={(e) => setSettings({ ...settings, shiprocket_email: e.target.value })}
+                    placeholder="shiprocket@account.com"
+                  />
+                </label>
+                <label>
+                  <span>Shiprocket Password</span>
+                  <input
+                    type="password"
+                    value={settings.shiprocket_password || ''}
+                    onChange={(e) => setSettings({ ...settings, shiprocket_password: e.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>Razorpay Key ID</span>
+                  <input
+                    type="text"
+                    value={settings.razorpay_key_id || ''}
+                    onChange={(e) => setSettings({ ...settings, razorpay_key_id: e.target.value })}
+                    placeholder="rzp_live_..."
+                  />
+                </label>
+                <label>
+                  <span>Razorpay Key Secret</span>
+                  <input
+                    type="password"
+                    value={settings.razorpay_key_secret || ''}
+                    onChange={(e) => setSettings({ ...settings, razorpay_key_secret: e.target.value })}
+                  />
+                </label>
+                <small style={{ color: '#66756c' }}>
+                  Razorpay controls which payment methods appear in Checkout. Check Payment Methods in your Razorpay Dashboard if UPI is missing in Test Mode.
+                </small>
+              </>
+            )}
+
+            {view === 'ai' && (
+              <>
+                <label>
+                  <span>AI Assistant Name</span>
+                  <input
+                    type="text"
+                    value={settings.ai_bot_name || 'Gawdee AI Assistant'}
+                    onChange={(e) => setSettings({ ...settings, ai_bot_name: e.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>System Prompt &amp; Brand Tone</span>
+                  <textarea
+                    rows={6}
+                    value={
+                      settings.ai_system_prompt ||
+                      'You are the helpful wellness advisor for Gawdee. Answer questions about A2 Gir Cow Ghee, Forest Honey, and Mix Me nutrition.'
+                    }
+                    onChange={(e) => setSettings({ ...settings, ai_system_prompt: e.target.value })}
+                  />
+                </label>
+              </>
+            )}
+
+            <button className="admin-button admin-button--primary" type="submit" style={{ marginTop: '1.2rem' }}>
+              <i className="ph ph-floppy-disk"></i> Save changes
+            </button>
+          </form>
+        </section>
+      )}
+
+      {/* ──────────────────────────────────────────────────────────────────────────
+          MODAL: ADD / EDIT CATEGORY
+          ────────────────────────────────────────────────────────────────────────── */}
+      {activeModal === 'category' && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.6)',
+            zIndex: 99999,
+            display: 'grid',
+            placeItems: 'center',
+            padding: '20px',
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '20px',
+              maxWidth: '560px',
+              width: '100%',
+              maxHeight: '92vh',
+              overflowY: 'auto',
+              padding: '28px',
+              boxShadow: '0 25px 60px rgba(0,0,0,0.22)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '14px', borderBottom: '1px solid #e1e7e2' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#005c4e' }}>
+                  {modalData.id ? `Edit Category: ${modalData.name}` : 'New Category'}
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '0.72rem', color: '#7b8981' }}>
+                  Categories group items in the storefront catalogue and filters.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveModal(null)}
+                style={{ background: '#f0f4f2', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'grid', placeItems: 'center', fontSize: '1.1rem', cursor: 'pointer', color: '#445' }}
+              >
+                <i className="ph ph-x"></i>
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  const name = (modalData.name || '').trim();
+                  if (name.length < 2) throw new Error('Category name must be at least 2 characters.');
+                  const filter = (modalData.filter || '').trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-');
+                  if (!filter) throw new Error('Filter key is required (used in catalogue URLs).');
+                  await adminApi.saveCategory({
+                    id: modalData.id || undefined,
+                    name,
+                    filter,
+                    image: modalData.image_url || '',
+                    image_url: modalData.image_url || '',
+                    // Icon field is dual-mode: uploaded image wins in image mode, else the picked icon.
+                    icon: iconMode === 'image' && (modalData.icon_image || '').trim()
+                      ? (modalData.icon_image || '').trim()
+                      : (modalData.icon || 'ph-squares-four'),
+                    parent_id: modalData.parent_id ?? null,
+                    sort_order: Math.max(0, parseInt(modalData.sort_order ?? 0) || 0),
+                    is_active: modalData.is_active !== false,
+                  });
+                  showFlash(modalData.id ? 'Category updated successfully' : 'Category created successfully');
+                  setActiveModal(null);
+                  loadViewData();
+                } catch (err: any) {
+                  showFlash(err.message || 'Failed to save category', 'error');
+                }
+              }}
+              className="admin-form"
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <label>
+                  <span>Category Name *</span>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. A2 Gir Cow Ghee"
+                    value={modalData.name || ''}
+                    onChange={(e) => {
+                      const name = e.target.value;
+                      // New categories: filter key follows the name automatically.
+                      setModalData({
+                        ...modalData,
+                        name,
+                        ...(!modalData.id ? { filter: autoSlug(name) } : {}),
+                      });
+                    }}
+                  />
+                </label>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <label>
+                    <span>Filter Key * <small style={{ color: '#7b8981' }}>(auto-set from name)</small></span>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. ghee"
+                      value={modalData.filter || ''}
+                      onChange={(e) => setModalData({ ...modalData, filter: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>Sort Order</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={modalData.sort_order ?? 0}
+                      onChange={(e) => setModalData({ ...modalData, sort_order: parseInt(e.target.value) || 0 })}
+                    />
+                  </label>
+                </div>
+
+                <label>
+                  <span>Icon * <small style={{ color: '#7b8981' }}>(shows on storefront tabs &amp; filters)</small></span>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+                    {(['icon', 'image'] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setIconMode(m)}
+                        className={`admin-button ${iconMode === m ? 'admin-button--primary' : 'admin-button--ghost'}`}
+                        style={{ padding: '7px 14px', fontSize: '0.72rem' }}
+                      >
+                        <i className={`ph ${m === 'icon' ? 'ph-smiley' : 'ph-image'}`}></i>
+                        {m === 'icon' ? 'Select icon' : 'Upload image'}
+                      </button>
+                    ))}
+                  </div>
+                  {iconMode === 'image' ? (
+                    <div>
+                      {(modalData.icon_image) && (
+                        <img
+                          src={`/${String(modalData.icon_image).replace(/^\//, '')}`}
+                          alt="Icon preview"
+                          style={{ width: '52px', height: '52px', objectFit: 'contain', borderRadius: '10px', border: '1px solid #e1e7e2', background: '#f6f8f6', marginBottom: '8px' }}
+                        />
+                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <input
+                          type="text"
+                          placeholder="/assets/uploads/categories/... or upload"
+                          value={modalData.icon_image || ''}
+                          onChange={(e) => setModalData({ ...modalData, icon_image: e.target.value })}
+                          style={{ flex: 1 }}
+                        />
+                        <label
+                          className="admin-button admin-button--ghost"
+                          style={{ whiteSpace: 'nowrap', cursor: 'pointer', padding: '9px 12px' }}
+                        >
+                          <i className="ph ph-upload-simple"></i> Upload
+                          <input
+                            type="file"
+                            accept="image/*"
+                            style={{ display: 'none' }}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                handleUploadImage(file, (url) => {
+                                  setModalData((prev: any) => ({ ...prev, icon_image: url }));
+                                }, 'categories');
+                              }
+                            }}
+                          />
+                        </label>
+                        {(modalData.icon_image) && (
+                          <button
+                            type="button"
+                            className="admin-button admin-button--ghost"
+                            style={{ padding: '9px 12px' }}
+                            onClick={() => setModalData({ ...modalData, icon_image: '' })}
+                          >
+                            <i className="ph ph-x"></i>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                  <div style={{ position: 'relative' }}>
+                    <button
+                      type="button"
+                      onClick={() => setIconPickerOpen((o) => !o)}
+                      aria-haspopup="listbox"
+                      aria-expanded={iconPickerOpen}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', border: '1px solid #dfe7e1', borderRadius: '10px', background: '#fff', cursor: 'pointer', fontSize: '0.85rem', color: '#1d3a2f' }}
+                    >
+                      <span
+                        aria-hidden="true"
+                        style={{ width: '34px', height: '34px', display: 'grid', placeItems: 'center', border: '1px solid #e1e7e2', borderRadius: '9px', background: '#f6f8f6', fontSize: '1.2rem', color: '#005c4e', flexShrink: 0 }}
+                      >
+                        <i className={`ph ${modalData.icon || 'ph-squares-four'}`}></i>
+                      </span>
+                      <span style={{ flex: 1, textAlign: 'left' }}>{modalData.icon || 'ph-squares-four'}</span>
+                      <i className={`ph ${iconPickerOpen ? 'ph-caret-up' : 'ph-caret-down'}`} aria-hidden="true"></i>
+                    </button>
+                    {iconPickerOpen && (
+                      <>
+                        <div
+                          style={{ position: 'fixed', inset: 0, zIndex: 40, cursor: 'default' }}
+                          onClick={() => setIconPickerOpen(false)}
+                          aria-hidden="true"
+                        />
+                        <div
+                          role="listbox"
+                          aria-label="Choose a category icon"
+                          style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 50, background: '#fff', border: '1px solid #dfe7e1', borderRadius: '12px', boxShadow: '0 18px 44px rgba(0,0,0,0.16)', padding: '10px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(76px, 1fr))', gap: '8px', maxHeight: '260px', overflowY: 'auto' }}
+                        >
+                          {CATEGORY_ICON_OPTIONS.map((icon) => {
+                            const isCur = (modalData.icon || 'ph-squares-four') === icon;
+                            return (
+                              <button
+                                key={icon}
+                                type="button"
+                                role="option"
+                                aria-selected={isCur}
+                                title={icon}
+                                onClick={() => {
+                                  setModalData({ ...modalData, icon });
+                                  setIconPickerOpen(false);
+                                }}
+                                style={{
+                                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px',
+                                  padding: '10px 6px', borderRadius: '10px', cursor: 'pointer',
+                                  border: isCur ? '2px solid #009a84' : '1px solid #e6ece7',
+                                  background: isCur ? '#eef7f2' : '#fff', color: '#005c4e',
+                                }}
+                              >
+                                <i className={`ph ${icon}`} aria-hidden="true" style={{ fontSize: '1.5rem' }}></i>
+                                <small style={{ fontSize: '0.6rem', color: '#5c6f65', wordBreak: 'break-all', lineHeight: 1.25 }}>
+                                  {icon.replace(/^ph-/, '')}
+                                </small>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  )}
+                </label>
+
+                <label className="form-switch" style={{ padding: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={modalData.is_active !== false}
+                    onChange={(e) => setModalData({ ...modalData, is_active: e.target.checked })}
+                  />
+                  <span>Category is visible in storefront</span>
+                </label>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                <button
+                  type="button"
+                  className="admin-button admin-button--ghost"
+                  onClick={() => setActiveModal(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="admin-button admin-button--primary"
+                  disabled={uploadingImage}
+                >
+                  <i className="ph ph-check"></i> {modalData.id ? 'Update Category' : 'Create Category'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ──────────────────────────────────────────────────────────────────────────
+          MODAL: ADD / EDIT HERO 3D SLIDE (BANNERS TWO)
+          ────────────────────────────────────────────────────────────────────────── */}
+      {activeModal === 'banner_two' && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.6)',
+            zIndex: 99999,
+            display: 'grid',
+            placeItems: 'center',
+            padding: '20px',
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '20px',
+              maxWidth: '680px',
+              width: '100%',
+              maxHeight: '92vh',
+              overflowY: 'auto',
+              padding: '28px',
+              boxShadow: '0 25px 60px rgba(0,0,0,0.22)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '14px', borderBottom: '1px solid #e1e7e2' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#005c4e' }}>
+                  {modalData.id ? `Edit Slide: ${modalData.title}` : 'New Hero 3D Slide'}
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '0.72rem', color: '#7b8981' }}>
+                  Slides rotate in the homepage 3D carousel. Prices/ratings merge from live catalog data.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveModal(null)}
+                style={{ background: '#f0f4f2', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'grid', placeItems: 'center', fontSize: '1.1rem', cursor: 'pointer', color: '#445', flexShrink: 0 }}
+              >
+                <i className="ph ph-x"></i>
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  const title = (modalData.title || '').trim();
+                  if (title.length < 2) throw new Error('Slide title must be at least 2 characters.');
+                  await adminApi.saveBannerTwo({
+                    id: modalData.id || undefined,
+                    title,
+                    cat: modalData.cat || '',
+                    title_html: modalData.title_html || '',
+                    word: modalData.word || '',
+                    sub: modalData.sub || '',
+                    price_label: modalData.price_label || '',
+                    mrp_label: modalData.mrp_label || '',
+                    off_badge: modalData.off_badge || '',
+                    reviews_label: modalData.reviews_label || '',
+                    product_image: modalData.product_image || '',
+                    cart_id: modalData.cart_id || '',
+                    cart_name: modalData.cart_name || '',
+                    cart_price: Math.max(0, parseInt(modalData.cart_price ?? 0) || 0),
+                    cart_image: modalData.cart_image || '',
+                    sort_order: Math.max(0, parseInt(modalData.sort_order ?? 0) || 0),
+                    is_active: modalData.is_active !== false,
+                  });
+                  showFlash(modalData.id ? 'Slide updated successfully' : 'Slide created successfully');
+                  setActiveModal(null);
+                  loadViewData();
+                } catch (err) {
+                  showFlash(err instanceof Error ? err.message : 'Failed to save slide', 'error');
+                }
+              }}
+              className="admin-form"
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <label>
+                  <span>Slide Title *</span>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. A2 Gir Cow Ghee"
+                    value={modalData.title || ''}
+                    onChange={(e) => setModalData({ ...modalData, title: e.target.value })}
+                  />
+                </label>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <label>
+                    <span>Category Pill</span>
+                    <input
+                      type="text"
+                      placeholder="e.g. A2 Vedic • Grass-Fed"
+                      value={modalData.cat || ''}
+                      onChange={(e) => setModalData({ ...modalData, cat: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>Background Word</span>
+                    <input
+                      type="text"
+                      placeholder="e.g. GHEE"
+                      value={modalData.word || ''}
+                      onChange={(e) => setModalData({ ...modalData, word: e.target.value })}
+                    />
+                  </label>
+                </div>
+
+                <label>
+                  <span>Title HTML (use &lt;br&gt; and &lt;span&gt; for the two-line look)</span>
+                  <input
+                    type="text"
+                    placeholder="e.g. A2 Vedic<br><span>Gir Cow Ghee</span>"
+                    value={modalData.title_html || ''}
+                    onChange={(e) => setModalData({ ...modalData, title_html: e.target.value })}
+                  />
+                </label>
+
+                <label>
+                  <span>Subtitle</span>
+                  <input
+                    type="text"
+                    placeholder="Short slide description shown under the title"
+                    value={modalData.sub || ''}
+                    onChange={(e) => setModalData({ ...modalData, sub: e.target.value })}
+                  />
+                </label>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <label>
+                    <span>Display Price</span>
+                    <input
+                      type="text"
+                      placeholder="e.g. ₹649"
+                      value={modalData.price_label || ''}
+                      onChange={(e) => setModalData({ ...modalData, price_label: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>MRP Label</span>
+                    <input
+                      type="text"
+                      placeholder="e.g. ₹799"
+                      value={modalData.mrp_label || ''}
+                      onChange={(e) => setModalData({ ...modalData, mrp_label: e.target.value })}
+                    />
+                  </label>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <label>
+                    <span>Offer Badge</span>
+                    <input
+                      type="text"
+                      placeholder="e.g. Save 19%"
+                      value={modalData.off_badge || ''}
+                      onChange={(e) => setModalData({ ...modalData, off_badge: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>Reviews Label</span>
+                    <input
+                      type="text"
+                      placeholder="e.g. 4.8 — 120 reviews"
+                      value={modalData.reviews_label || ''}
+                      onChange={(e) => setModalData({ ...modalData, reviews_label: e.target.value })}
+                    />
+                  </label>
+                </div>
+
+                <label>
+                  <span>Product Image (cutout PNG/WebP)</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {(modalData.product_image) && (
+                      <img
+                        src={`/${String(modalData.product_image).replace(/^\//, '')}`}
+                        alt=""
+                        style={{ width: '44px', height: '44px', objectFit: 'contain', borderRadius: '8px', border: '1px solid #e1e7e2', background: '#f6f8f6', flexShrink: 0 }}
+                      />
+                    )}
+                    <input
+                      type="text"
+                      placeholder="/assets/uploads/... or upload"
+                      value={modalData.product_image || ''}
+                      onChange={(e) => setModalData({ ...modalData, product_image: e.target.value })}
+                      style={{ flex: 1 }}
+                    />
+                    <label
+                      className="admin-button admin-button--ghost"
+                      style={{ whiteSpace: 'nowrap', cursor: 'pointer', padding: '9px 12px' }}
+                    >
+                      <i className="ph ph-upload-simple"></i> Upload
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleUploadImage(file, (url) => {
+                              setModalData((prev: any) => ({ ...prev, product_image: url }));
+                            }, 'banners');
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </label>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <label>
+                    <span>Cart Product ID (variant slug/id — links live price &amp; stock)</span>
+                    <input
+                      type="text"
+                      placeholder="e.g. gawdee-gir-cow-a2-ghee-500-ml"
+                      value={modalData.cart_id || ''}
+                      onChange={(e) => setModalData({ ...modalData, cart_id: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>Cart Product Name</span>
+                    <input
+                      type="text"
+                      placeholder="e.g. Gawdee Gir Cow A2 Ghee 500ml"
+                      value={modalData.cart_name || ''}
+                      onChange={(e) => setModalData({ ...modalData, cart_name: e.target.value })}
+                    />
+                  </label>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <label>
+                    <span>Cart Price (₹)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={modalData.cart_price ?? 0}
+                      onChange={(e) => setModalData({ ...modalData, cart_price: parseInt(e.target.value) || 0 })}
+                    />
+                  </label>
+                  <label>
+                    <span>Sort Order</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={modalData.sort_order ?? 0}
+                      onChange={(e) => setModalData({ ...modalData, sort_order: parseInt(e.target.value) || 0 })}
+                    />
+                  </label>
+                </div>
+
+                <label>
+                  <span>Cart Image</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {(modalData.cart_image) && (
+                      <img
+                        src={`/${String(modalData.cart_image).replace(/^\//, '')}`}
+                        alt=""
+                        style={{ width: '44px', height: '44px', objectFit: 'contain', borderRadius: '8px', border: '1px solid #e1e7e2', background: '#f6f8f6', flexShrink: 0 }}
+                      />
+                    )}
+                    <input
+                      type="text"
+                      placeholder="/assets/uploads/... or upload"
+                      value={modalData.cart_image || ''}
+                      onChange={(e) => setModalData({ ...modalData, cart_image: e.target.value })}
+                      style={{ flex: 1 }}
+                    />
+                    <label
+                      className="admin-button admin-button--ghost"
+                      style={{ whiteSpace: 'nowrap', cursor: 'pointer', padding: '9px 12px' }}
+                    >
+                      <i className="ph ph-upload-simple"></i> Upload
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleUploadImage(file, (url) => {
+                              setModalData((prev: any) => ({ ...prev, cart_image: url }));
+                            }, 'banners');
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </label>
+
+                <label className="form-switch" style={{ padding: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={modalData.is_active !== false}
+                    onChange={(e) => setModalData({ ...modalData, is_active: e.target.checked })}
+                  />
+                  <span>Slide is visible in the carousel</span>
+                </label>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                <button
+                  type="button"
+                  className="admin-button admin-button--ghost"
+                  onClick={() => setActiveModal(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="admin-button admin-button--primary"
+                  disabled={uploadingImage}
+                >
+                  <i className="ph ph-check"></i> {modalData.id ? 'Update Slide' : 'Create Slide'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ──────────────────────────────────────────────────────────────────────────
+          MODAL: ADD / EDIT REEL
+          ────────────────────────────────────────────────────────────────────────── */}
+      {activeModal === 'reel' && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.6)',
+            zIndex: 99999,
+            display: 'grid',
+            placeItems: 'center',
+            padding: '20px',
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '20px',
+              maxWidth: '560px',
+              width: '100%',
+              maxHeight: '92vh',
+              overflowY: 'auto',
+              padding: '28px',
+              boxShadow: '0 25px 60px rgba(0,0,0,0.22)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '14px', borderBottom: '1px solid #e1e7e2' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#005c4e' }}>
+                  {modalData.id ? `Edit Reel: ${modalData.title}` : 'New Reel'}
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '0.72rem', color: '#7b8981' }}>
+                  Add a reel/video preview, a thumbnail image, and the full video destination.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveModal(null)}
+                style={{ background: '#f0f4f2', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'grid', placeItems: 'center', fontSize: '1.1rem', cursor: 'pointer', color: '#445', flexShrink: 0 }}
+              >
+                <i className="ph ph-x"></i>
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  const title = (modalData.title || '').trim();
+                  if (title.length < 2) throw new Error('Reel title must be at least 2 characters.');
+                  await adminApi.saveReel({
+                    id: modalData.id || undefined,
+                    title,
+                    subtitle: modalData.subtitle || '',
+                    file_path: modalData.file_path || '',
+                    poster_path: modalData.poster_path || '',
+                    external_url: modalData.external_url || '',
+                    link_url: modalData.link_url || '',
+                    alt_text: modalData.alt_text || '',
+                    product_slug: modalData.product_slug || '',
+                    sort_order: Math.max(0, parseInt(modalData.sort_order ?? 0) || 0),
+                    is_active: modalData.is_active !== false,
+                  });
+                  showFlash(modalData.id ? 'Reel updated successfully' : 'Reel created successfully');
+                  setActiveModal(null);
+                  loadViewData();
+                } catch (err) {
+                  showFlash(err instanceof Error ? err.message : 'Failed to save reel', 'error');
+                }
+              }}
+              className="admin-form"
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <label>
+                  <span>Reel Title *</span>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Bilona Ghee Process"
+                    value={modalData.title || ''}
+                    onChange={(e) => setModalData({ ...modalData, title: e.target.value })}
+                  />
+                </label>
+
+                <label>
+                  <span>Video File</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="text"
+                      placeholder="/assets/uploads/... or upload"
+                      value={modalData.file_path || ''}
+                      onChange={(e) => setModalData({ ...modalData, file_path: e.target.value })}
+                      style={{ flex: 1 }}
+                    />
+                    <label
+                      className="admin-button admin-button--ghost"
+                      style={{ whiteSpace: 'nowrap', cursor: 'pointer', padding: '9px 12px' }}
+                    >
+                      <i className="ph ph-upload-simple"></i> Upload
+                      <input
+                        type="file"
+                        accept="video/*"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleUploadImage(file, (url) => {
+                              setModalData((prev: any) => ({ ...prev, file_path: url }));
+                            }, 'reels');
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <small style={{ display: 'block', color: '#6b7a73', marginTop: '6px', lineHeight: 1.5 }}>
+                    Upload the short video clip used for the muted autoplay preview on the reels page. This is the preview section, not the full video destination.
+                  </small>
+                </label>
+
+                <label>
+                  <span>Thumbnail / Poster Image</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="text"
+                      placeholder="/assets/uploads/... or upload"
+                      value={modalData.poster_path || ''}
+                      onChange={(e) => setModalData({ ...modalData, poster_path: e.target.value })}
+                      style={{ flex: 1 }}
+                    />
+                    <label
+                      className="admin-button admin-button--ghost"
+                      style={{ whiteSpace: 'nowrap', cursor: 'pointer', padding: '9px 12px' }}
+                    >
+                      <i className="ph ph-upload-simple"></i> Upload
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleUploadImage(file, (url) => {
+                              setModalData((prev: any) => ({ ...prev, poster_path: url }));
+                            }, 'reels');
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <small style={{ display: 'block', color: '#6b7a73', marginTop: '6px', lineHeight: 1.5 }}>
+                    This is the cover image shown before the video preview plays. It is the static thumbnail users see in the reel card.
+                  </small>
+                </label>
+
+                <label>
+                  <span>Full Video Link (Instagram / YouTube / other)</span>
+                  <input
+                    type="url"
+                    placeholder="https://www.instagram.com/... or https://youtu.be/..."
+                    value={modalData.external_url || ''}
+                    onChange={(e) => setModalData({ ...modalData, external_url: e.target.value })}
+                  />
+                  <small style={{ display: 'block', color: '#6b7a73', marginTop: '6px', lineHeight: 1.5 }}>
+                    This is the full original video page. When a user clicks the reel, they are taken here to watch the complete video on Instagram, YouTube, or the source platform.
+                  </small>
+                </label>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <label>
+                    <span>Linked Product Slug</span>
+                    <input
+                      type="text"
+                      placeholder="e.g. gawdee-gir-cow-a2-ghee-500-ml"
+                      value={modalData.product_slug || ''}
+                      onChange={(e) => setModalData({ ...modalData, product_slug: e.target.value })}
+                    />
+                    <small style={{ display: 'block', color: '#6b7a73', marginTop: '6px', lineHeight: 1.5 }}>
+                      Optional: if filled, the reel opens that product page instead of the external video link.
+                    </small>
+                  </label>
+                  <label>
+                    <span>Sort Order</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={modalData.sort_order ?? 0}
+                      onChange={(e) => setModalData({ ...modalData, sort_order: parseInt(e.target.value) || 0 })}
+                    />
+                    <small style={{ display: 'block', color: '#6b7a73', marginTop: '6px', lineHeight: 1.5 }}>
+                      Controls the order of reels on the page. Lower numbers appear first.
+                    </small>
+                  </label>
+                </div>
+
+                <label className="form-switch" style={{ padding: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={modalData.is_active !== false}
+                    onChange={(e) => setModalData({ ...modalData, is_active: e.target.checked })}
+                  />
+                  <span>Reel is visible in storefront</span>
+                </label>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                <button
+                  type="button"
+                  className="admin-button admin-button--ghost"
+                  onClick={() => setActiveModal(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="admin-button admin-button--primary"
+                  disabled={uploadingImage}
+                >
+                  <i className="ph ph-check"></i> {modalData.id ? 'Update Reel' : 'Create Reel'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {activeModal === 'offer' && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.6)',
+            zIndex: 99999,
+            display: 'grid',
+            placeItems: 'center',
+            padding: '20px',
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '20px',
+              maxWidth: '620px',
+              width: '100%',
+              maxHeight: '92vh',
+              overflowY: 'auto',
+              padding: '28px',
+              boxShadow: '0 25px 60px rgba(0,0,0,0.22)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '14px', borderBottom: '1px solid #e1e7e2' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#005c4e' }}>
+                  {modalData.id ? `Edit Offer: ${modalData.title}` : 'New Offer'}
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '0.72rem', color: '#7b8981' }}>
+                  Add a promo card that shows on the homepage and dedicated offers page.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveModal(null)}
+                style={{ background: '#f0f4f2', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'grid', placeItems: 'center', fontSize: '1.1rem', cursor: 'pointer', color: '#445', flexShrink: 0 }}
+              >
+                <i className="ph ph-x"></i>
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  const title = (modalData.title || '').trim();
+                  if (!title) throw new Error('Offer title is required.');
+                  await adminApi.saveOffer({
+                    id: modalData.id || undefined,
+                    title,
+                    subtitle: modalData.subtitle || '',
+                    description: modalData.description || '',
+                    badge: modalData.badge || 'HOT DEAL',
+                    image_url: modalData.image_url || '',
+                    link_url: modalData.link_url || '/products',
+                    cta_label: modalData.cta_label || 'Shop now',
+                    sort_order: Math.max(0, parseInt(modalData.sort_order ?? 0) || 0),
+                    is_active: modalData.is_active !== false,
+                  });
+                  showFlash(modalData.id ? 'Offer updated successfully' : 'Offer created successfully');
+                  setActiveModal(null);
+                  loadViewData();
+                } catch (err) {
+                  showFlash(err instanceof Error ? err.message : 'Failed to save offer', 'error');
+                }
+              }}
+              className="admin-form"
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <label>
+                  <span>Offer Title *</span>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Save 25% on wellness essentials"
+                    value={modalData.title || ''}
+                    onChange={(e) => setModalData({ ...modalData, title: e.target.value })}
+                  />
+                </label>
+
+                <label>
+                  <span>Subtitle</span>
+                  <input
+                    type="text"
+                    placeholder="e.g. Family combo savings"
+                    value={modalData.subtitle || ''}
+                    onChange={(e) => setModalData({ ...modalData, subtitle: e.target.value })}
+                  />
+                </label>
+
+                <label>
+                  <span>Description</span>
+                  <textarea
+                    rows={4}
+                    placeholder="Short description shown on offer cards"
+                    value={modalData.description || ''}
+                    onChange={(e) => setModalData({ ...modalData, description: e.target.value })}
+                  />
+                </label>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <label>
+                    <span>Badge</span>
+                    <input
+                      type="text"
+                      placeholder="HOT DEAL"
+                      value={modalData.badge || ''}
+                      onChange={(e) => setModalData({ ...modalData, badge: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>CTA label</span>
+                    <input
+                      type="text"
+                      placeholder="Shop now"
+                      value={modalData.cta_label || ''}
+                      onChange={(e) => setModalData({ ...modalData, cta_label: e.target.value })}
+                    />
+                  </label>
+                </div>
+
+                <label>
+                  <span>Image URL</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="text"
+                      placeholder="/assets/uploads/... or upload"
+                      value={modalData.image_url || ''}
+                      onChange={(e) => setModalData({ ...modalData, image_url: e.target.value })}
+                      style={{ flex: 1 }}
+                    />
+                    <label
+                      className="admin-button admin-button--ghost"
+                      style={{ whiteSpace: 'nowrap', cursor: 'pointer', padding: '9px 12px' }}
+                    >
+                      <i className="ph ph-upload-simple"></i> Upload
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleUploadImage(file, (url) => {
+                              setModalData((prev: any) => ({ ...prev, image_url: url }));
+                            }, 'offers');
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </label>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <label>
+                    <span>Link URL</span>
+                    <input
+                      type="text"
+                      placeholder="/products or https://..."
+                      value={modalData.link_url || ''}
+                      onChange={(e) => setModalData({ ...modalData, link_url: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>Sort Order</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={modalData.sort_order ?? 0}
+                      onChange={(e) => setModalData({ ...modalData, sort_order: parseInt(e.target.value) || 0 })}
+                    />
+                  </label>
+                </div>
+
+                <label className="form-switch" style={{ padding: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={modalData.is_active !== false}
+                    onChange={(e) => setModalData({ ...modalData, is_active: e.target.checked })}
+                  />
+                  <span>Offer is visible in storefront</span>
+                </label>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                <button
+                  type="button"
+                  className="admin-button admin-button--ghost"
+                  onClick={() => setActiveModal(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="admin-button admin-button--primary"
+                  disabled={uploadingImage}
+                >
+                  <i className="ph ph-check"></i> {modalData.id ? 'Update Offer' : 'Create Offer'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ──────────────────────────────────────────────────────────────────────────
+          MODAL: ADD / EDIT COMBO
+          ────────────────────────────────────────────────────────────────────────── */}
+      {activeModal === 'combo' && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.6)',
+            zIndex: 99999,
+            display: 'grid',
+            placeItems: 'center',
+            padding: '20px',
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '20px',
+              maxWidth: '640px',
+              width: '100%',
+              maxHeight: '92vh',
+              overflowY: 'auto',
+              padding: '28px',
+              boxShadow: '0 25px 60px rgba(0,0,0,0.22)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '14px', borderBottom: '1px solid #e1e7e2' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#005c4e' }}>
+                  {modalData.id ? `Edit Combo: ${modalData.title}` : 'New Combo'}
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '0.72rem', color: '#7b8981' }}>
+                  Shows in the homepage “Better Together” grid (.nhp-combos__grid).
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveModal(null)}
+                style={{ background: '#f0f4f2', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'grid', placeItems: 'center', fontSize: '1.1rem', cursor: 'pointer', color: '#445', flexShrink: 0 }}
+              >
+                <i className="ph ph-x"></i>
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  const title = (modalData.title || '').trim();
+                  if (!title) throw new Error('Combo title is required.');
+                  if (!((modalData.image || '').trim())) throw new Error('Upload a combo image first.');
+                  if (!modalData.product_one_ref) throw new Error('Select the first product.');
+                  if (!modalData.product_two_ref) throw new Error('Select the second product.');
+                  const numOrUnset = (v: any) => (v === '' || v === null || v === undefined ? undefined : Number(v));
+                  await adminApi.saveCombo({
+                    id: modalData.id || undefined,
+                    title,
+                    category: (modalData.category || '').trim(),
+                    description: modalData.description || '',
+                    image: (modalData.image || '').trim(),
+                    product_one_ref: String(modalData.product_one_ref),
+                    product_two_ref: String(modalData.product_two_ref),
+                    selling_price: numOrUnset(modalData.selling_price),
+                    mrp: numOrUnset(modalData.mrp),
+                    discount: numOrUnset(modalData.discount),
+                    sort_order: Math.max(0, parseInt(modalData.sort_order ?? 0) || 0),
+                    is_active: modalData.is_active !== false,
+                  });
+                  showFlash(modalData.id ? 'Combo updated successfully' : 'Combo created successfully');
+                  setActiveModal(null);
+                  loadViewData();
+                } catch (err) {
+                  showFlash(err instanceof Error ? err.message : 'Failed to save combo', 'error');
+                }
+              }}
+              className="admin-form"
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <label>
+                  <span>Combo image *</span>
+                  {modalData.image && (
+                    <img
+                      src={String(modalData.image).startsWith('http') ? modalData.image : `/${String(modalData.image).replace(/^\//, '')}`}
+                      alt="Combo preview"
+                      style={{ width: '100%', height: '160px', objectFit: 'cover', borderRadius: '12px', border: '1px solid #e1e7e2', background: '#f6f8f6', marginBottom: '8px' }}
+                    />
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="text"
+                      placeholder="/assets/uploads/combos/... or upload"
+                      value={modalData.image || ''}
+                      onChange={(e) => setModalData({ ...modalData, image: e.target.value })}
+                      style={{ flex: 1 }}
+                    />
+                    <label
+                      className="admin-button admin-button--ghost"
+                      style={{ whiteSpace: 'nowrap', cursor: 'pointer', padding: '9px 12px' }}
+                    >
+                      <i className="ph ph-upload-simple"></i> Upload
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleUploadImage(file, (url) => {
+                              setModalData((prev: any) => ({ ...prev, image: url }));
+                            }, 'combos');
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </label>
+
+                <label>
+                  <span>Combo title *</span>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Raw Forest Honey (350g) + Jaggery Powder (1 kg)"
+                    value={modalData.title || ''}
+                    onChange={(e) => setModalData({ ...modalData, title: e.target.value })}
+                  />
+                </label>
+
+                <label>
+                  <span>Category label <small style={{ color: '#7b8981' }}>(.nhp-combo__category eyebrow)</small></span>
+                  <input
+                    type="text"
+                    placeholder="e.g. EVERYDAY SWEETENING DUO"
+                    value={modalData.category || ''}
+                    onChange={(e) => setModalData({ ...modalData, category: e.target.value })}
+                  />
+                </label>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <label>
+                    <span>First product *</span>
+                    <select
+                      value={modalData.product_one_ref || ''}
+                      onChange={(e) => setModalData({ ...modalData, product_one_ref: e.target.value })}
+                    >
+                      <option value="">Select product…</option>
+                      {(comboProducts || []).flatMap((item: any) =>
+                        (item.variants || []).map((v: any) => {
+                          const price = v.selling_price ?? v.sellingPrice ?? v.price ?? 0;
+                          return (
+                            <option key={`one-${v.id}`} value={String(v.id)}>
+                              {item.name} — {v.variant_name || v.variantName || 'Standard'} (₹{price})
+                            </option>
+                          );
+                        })
+                      )}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Second product *</span>
+                    <select
+                      value={modalData.product_two_ref || ''}
+                      onChange={(e) => setModalData({ ...modalData, product_two_ref: e.target.value })}
+                    >
+                      <option value="">Select product…</option>
+                      {(comboProducts || []).flatMap((item: any) =>
+                        (item.variants || []).map((v: any) => {
+                          const price = v.selling_price ?? v.sellingPrice ?? v.price ?? 0;
+                          return (
+                            <option key={`two-${v.id}`} value={String(v.id)}>
+                              {item.name} — {v.variant_name || v.variantName || 'Standard'} (₹{price})
+                            </option>
+                          );
+                        })
+                      )}
+                    </select>
+                  </label>
+                </div>
+
+                <label>
+                  <span>Description</span>
+                  <textarea
+                    rows={3}
+                    placeholder="Short bundle description shown under the title"
+                    value={modalData.description || ''}
+                    onChange={(e) => setModalData({ ...modalData, description: e.target.value })}
+                  />
+                </label>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
+                  <label>
+                    <span>Price (₹) *</span>
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="e.g. 490"
+                      value={modalData.selling_price ?? ''}
+                      onChange={(e) => setModalData({ ...modalData, selling_price: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>MRP (₹)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="e.g. 598"
+                      value={modalData.mrp ?? ''}
+                      onChange={(e) => setModalData({ ...modalData, mrp: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>Discount (%)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={90}
+                      step="0.01"
+                      placeholder="e.g. 18"
+                      value={modalData.discount ?? ''}
+                      onChange={(e) => setModalData({ ...modalData, discount: e.target.value })}
+                    />
+                  </label>
+                </div>
+                <p style={{ margin: 0, fontSize: '0.7rem', color: '#7b8981' }}>
+                  The SAVE % badge is computed by the backend from Price vs MRP. Leave Price empty and enter MRP + Discount to derive the price automatically.
+                </p>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <label>
+                    <span>Sort Order</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={modalData.sort_order ?? 0}
+                      onChange={(e) => setModalData({ ...modalData, sort_order: parseInt(e.target.value) || 0 })}
+                    />
+                  </label>
+                  <label className="form-switch" style={{ padding: 0, alignSelf: 'end', paddingBottom: '10px' }}>
+                    <input
+                      type="checkbox"
+                      checked={modalData.is_active !== false}
+                      onChange={(e) => setModalData({ ...modalData, is_active: e.target.checked })}
+                    />
+                    <span>Combo is visible in storefront</span>
+                  </label>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                <button
+                  type="button"
+                  className="admin-button admin-button--ghost"
+                  onClick={() => setActiveModal(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="admin-button admin-button--primary"
+                  disabled={uploadingImage}
+                >
+                  <i className="ph ph-check"></i> {modalData.id ? 'Update Combo' : 'Create Combo'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Catalog Item add/edit lives on dedicated pages: /admin/products/new and /admin/products/[id] (no modal). */}
+
+    </>
+  );
+}
+
+export default function AdminPage() {
+  return (
+    <React.Suspense fallback={<div style={{ padding: '2rem' }}>Loading...</div>}>
+      <AdminPageContent />
+    </React.Suspense>
+  );
+}

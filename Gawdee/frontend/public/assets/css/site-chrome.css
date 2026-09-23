@@ -1,0 +1,421 @@
+/* Site-wide shared chrome + design tokens.
+   Source of truth: Animated Hero (includes/hero-animated.php + assets/css/hero-animated.css).
+   Centralises exact tokens and propagates visual language site-wide without modifying .gx-hero. */
+
+:root {
+  /* Animated Hero Master Design Tokens */
+  --gx-cream: #fff8f1;
+  --gx-sage: #9dd0b6;
+  --gx-ink: #009a84;
+  --gx-espresso: #005c4e;
+  --gx-gold: #c19a3d;
+  --gx-surface: #ffffff;
+  --gx-muted: rgba(0, 92, 78, 0.75);
+  --gx-border: rgba(0, 92, 78, 0.15);
+  --gx-font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --radius-pill: 999px;
+  --radius-card: 16px;
+  --radius-sm: 8px;
+
+  --shadow-cart: 0 10px 25px rgba(0, 92, 78, 0.25);
+  --shadow-card: 0 10px 30px rgba(0, 60, 50, 0.15);
+  --shadow-badge: 0 20px 40px rgba(0, 40, 35, 0.35);
+
+  /* Mapping Legacy Design Tokens to Source of Truth */
+  --site-body-font: var(--gx-font);
+  --site-heading-font: var(--gx-font);
+
+  --sf-green: var(--gx-ink);
+  --sf-accent: var(--gx-gold);
+  --sf-ink: var(--gx-espresso);
+  --sf-muted: var(--gx-muted);
+  --sf-line: var(--gx-border);
+  --sf-paper: var(--gx-cream);
+  --sf-radius: 16px;
+
+  --brand: var(--gx-ink);
+  --brand-deep: #007a68;
+  --brand-dark: var(--gx-espresso);
+  --brand-pale: #e6f6f3;
+  --ivory: var(--gx-cream);
+  --warm-paper: var(--gx-cream);
+  --sage-line: var(--gx-border);
+  --copy: var(--gx-espresso);
+
+  --pdp-green: var(--gx-ink);
+  --pdp-dark: var(--gx-espresso);
+  --pdp-mint: #e6f6f3;
+  --pdp-line: var(--gx-border);
+
+  --forest: var(--gx-espresso);
+  --forest-deep: #003830;
+  --green: var(--gx-ink);
+  --mint: var(--gx-sage);
+  --cream: var(--gx-cream);
+  --paper: var(--gx-cream);
+  --gold: var(--gx-gold);
+  --line: var(--gx-border);
+}
+
+/* Global Font Enforcement */
+html,
+body,
+button,
+input,
+select,
+textarea,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.sf-modern,
+.gawdee-pdp,
+.product-page--reference,
+.commerce-header,
+.commerce-footer,
+.cart-drawer,
+.commerce-search-panel {
+  font-family: var(--gx-font) !important;
+}
+
+/* Global Background & Body Alignment */
+body.sf-modern {
+  background-color: var(--gx-cream);
+  color: var(--gx-espresso);
+}
+
+/* Preheader / Announcement Strip (TV-tag style) */
+.sf-reference-promo {
+  background: var(--gx-ink) !important;
+  color: var(--gx-cream) !important;
+  font-family: var(--gx-font) !important;
+}
+.sf-reference-promo span,
+.sf-reference-promo li {
+  font-family: var(--gx-font) !important;
+  font-weight: 600;
+}
+
+/* Site Navigation & Floating Header */
+.commerce-header__float {
+  background: rgba(255, 255, 255, 0.85) !important;
+  backdrop-filter: blur(18px) !important;
+  -webkit-backdrop-filter: blur(18px) !important;
+  border: 1px solid rgba(0, 92, 78, 0.15) !important;
+  border-radius: 999px !important;
+}
+.commerce-nav a,
+.commerce-nav div > a {
+  font-family: var(--gx-font) !important;
+  font-weight: 600 !important;
+  color: var(--gx-espresso) !important;
+}
+.commerce-nav a:hover,
+.commerce-nav a.is-active {
+  color: var(--gx-ink) !important;
+}
+.commerce-shop-now {
+  background: var(--gx-ink) !important;
+  color: var(--gx-cream) !important;
+  border-radius: 999px !important;
+  font-size: 12px !important;
+  letter-spacing: 0.15em !important;
+  text-transform: uppercase !important;
+  font-weight: 700 !important;
+  box-shadow: var(--shadow-cart) !important;
+  transition:
+    background 0.3s ease,
+    transform 0.15s ease !important;
+}
+.commerce-shop-now:hover {
+  background: var(--gx-espresso) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* Buttons — Pill buttons styled after Animated Hero .gx-btn-cart and .gx-btn-lux */
+.sf-button,
+.button:not(.button--secondary),
+.button--primary,
+.gawdee-btn-primary,
+[data-add-to-cart]:not(.gx-btn-cart) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1.75rem;
+  border-radius: 999px !important;
+  background: var(--gx-ink) !important;
+  color: var(--gx-cream) !important;
+  font-family: var(--gx-font) !important;
+  font-size: 12px !important;
+  letter-spacing: 0.15em !important;
+  text-transform: uppercase !important;
+  font-weight: 700 !important;
+  border: 0 !important;
+  cursor: pointer;
+  box-shadow: var(--shadow-cart) !important;
+  transition:
+    background 0.3s ease,
+    transform 0.15s ease,
+    box-shadow 0.3s ease !important;
+}
+.sf-button:hover,
+.button:not(.button--secondary):hover,
+.button--primary:hover,
+.gawdee-btn-primary:hover,
+[data-add-to-cart]:not(.gx-btn-cart):hover {
+  background: var(--gx-espresso) !important;
+  color: #ffffff !important;
+}
+.button--secondary,
+.sf-button--secondary,
+.gawdee-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1.75rem;
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, 0.7) !important;
+  border: 2px solid var(--gx-ink) !important;
+  color: var(--gx-ink) !important;
+  font-family: var(--gx-font) !important;
+  font-size: 12px !important;
+  letter-spacing: 0.15em !important;
+  text-transform: uppercase !important;
+  font-weight: 700 !important;
+  cursor: pointer;
+  transition: all 0.3s ease !important;
+}
+.button--secondary:hover,
+.sf-button--secondary:hover,
+.gawdee-btn-secondary:hover {
+  background: var(--gx-ink) !important;
+  color: var(--gx-cream) !important;
+}
+
+/* Product Cards & Containers */
+.sf-product,
+.gawdee-product-card,
+.journal-card,
+.sf-quality-card,
+.sf-reviews article {
+  border-radius: 16px !important;
+  border: 1px solid var(--gx-border) !important;
+  background: #ffffff !important;
+  box-shadow: var(--shadow-card) !important;
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease !important;
+}
+.sf-product:hover,
+.gawdee-product-card:hover,
+.journal-card:hover {
+  transform: translateY(-4px) !important;
+  box-shadow: 0 16px 36px rgba(0, 92, 78, 0.2) !important;
+}
+
+/* Badges & Save Tags */
+.sf-product__badge,
+.gawdee-badge,
+.badge,
+.tag {
+  border-radius: 999px !important;
+  font-family: var(--gx-font) !important;
+  font-size: 11px !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  font-weight: 700 !important;
+}
+
+/* Form Controls & Inputs */
+input[type="text"],
+input[type="email"],
+input[type="search"],
+input[type="number"],
+input[type="tel"],
+select,
+textarea {
+  border-radius: 999px !important;
+  border: 1px solid var(--gx-border) !important;
+  padding: 0.75rem 1.25rem !important;
+  font-family: var(--gx-font) !important;
+  outline: none !important;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease !important;
+}
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--gx-ink) !important;
+  box-shadow: 0 0 0 3px rgba(0, 154, 132, 0.2) !important;
+}
+textarea {
+  border-radius: 16px !important;
+}
+
+/* Cart Drawer & Modals */
+.cart-drawer,
+.commerce-search-panel,
+.ai-chat {
+  border-radius: 20px !important;
+  border: 1px solid var(--gx-border) !important;
+  font-family: var(--gx-font) !important;
+}
+
+/* Footer Styling */
+.commerce-footer.gawdee-site-footer {
+  background-color: var(--gx-ink) !important;
+  color: var(--gx-cream) !important;
+  font-family: var(--gx-font) !important;
+}
+.commerce-footer.gawdee-site-footer h2,
+.commerce-footer.gawdee-site-footer p,
+.commerce-footer.gawdee-site-footer a {
+  color: var(--gx-cream) !important;
+  font-family: var(--gx-font) !important;
+}
+.commerce-footer.gawdee-site-footer a:hover {
+  color: var(--gx-sage) !important;
+}
+.footer-mini-form input {
+  background: rgba(255, 255, 255, 0.15) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+}
+.footer-mini-form input::placeholder {
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+.footer-mini-form button {
+  background: var(--gx-gold) !important;
+  color: var(--gx-espresso) !important;
+  border-radius: 999px !important;
+}
+
+/* Inner Page Header Clears */
+body.sf-modern:not(.sf-home) .commerce-header {
+  margin-top: 58px;
+}
+@media (max-width: 960px) {
+  body.sf-modern:not(.sf-home) .commerce-header {
+    margin-top: 44px;
+  }
+}
+
+/* Trust/Values Strip: compact inline design (trial toggle $useNewValuesDesign).
+   Old .sf-values CSS untouched — separate .gx-values classes, same data.
+   Theme: text #033E37, icon dark #033E37 on light #009A84 tint. */
+.sf-trust-strip .gx-values,
+.sf-why .gx-values {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  align-items: stretch;
+  margin: 0;
+  padding: 4px 0;
+}
+/* Farms process row has 6 items -> same common style, 6 columns */
+#farms .gx-values {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  align-items: stretch;
+  margin: 0;
+  padding: 4px 0;
+}
+.gx-value {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
+}
+.gx-value + .gx-value {
+  border-left: 1px solid rgba(3, 62, 55, 0.12);
+}
+.gx-value-icon {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: #033e37;
+  background: rgba(0, 154, 132, 0.12);
+  border: 1px solid rgba(0, 154, 132, 0.25);
+}
+.gx-value-icon > i {
+  font-size: 22px;
+}
+.gx-value-icon .sf-artwork.sf-artwork--crop {
+  width: 28px;
+  height: auto;
+  aspect-ratio: var(--art-ratio);
+}
+/* Mirror the sprite-crop technique (.sf-artwork--crop): the <img> is the
+   full sheet, absolutely positioned so only one icon cell shows. */
+.gx-value-icon .sf-artwork.sf-artwork--crop > img {
+  position: absolute;
+  width: var(--art-width);
+  height: var(--art-height);
+  max-width: none;
+  left: var(--art-left);
+  top: var(--art-top);
+  object-fit: fill;
+}
+/* Plain (uncropped) artwork fallback */
+.gx-value-icon .sf-artwork:not(.sf-artwork--crop) {
+  width: 26px;
+  height: 26px;
+}
+.gx-value-icon .sf-artwork:not(.sf-artwork--crop) img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.gx-value-text {
+  min-width: 0;
+}
+.gx-value-text h3 {
+  margin: 0;
+  color: #033e37;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.gx-value-text p {
+  margin: 2px 0 0;
+  color: rgba(3, 62, 55, 0.65);
+  font-size: 11px;
+  line-height: 1.4;
+}
+@media (max-width: 1100px) {
+  .sf-trust-strip .gx-values,
+  .sf-why .gx-values,
+  #farms .gx-values {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px 0;
+  }
+  .gx-value + .gx-value {
+    border-left: 0;
+  }
+}
+@media (max-width: 640px) {
+  .sf-trust-strip .gx-values,
+  .sf-why .gx-values,
+  #farms .gx-values {
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(210px, 72vw);
+    grid-template-columns: none;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: thin;
+    padding-bottom: 10px;
+  }
+  .gx-value {
+    scroll-snap-align: start;
+  }
+}

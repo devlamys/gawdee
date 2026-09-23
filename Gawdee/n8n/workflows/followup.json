@@ -1,0 +1,87 @@
+{
+  "name": "Gawdee | Abandoned checkout follow-up",
+  "nodes": [
+    {
+      "id": "73b8451c-d2e4-5166-ac63-d2f6eeda0488",
+      "name": "followup event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gawdee/followup",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "17f52d47-2dae-57aa-b179-5efeda7683eb"
+    },
+    {
+      "id": "d0088cd7-a8aa-57e0-8c0c-4c85a54feb9a",
+      "name": "Prepare followup messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const event = $input.first().json.body;\nif (!event || event.type !== 'checkout.abandoned' || !event.event_id) throw new Error('Expected checkout.abandoned with event_id');\nconst lead = event.lead || {};\nconst phone = String(lead.phone || '').replace(/\\D/g, '');\nif (!/^\\d{8,15}$/.test(phone)) throw new Error('Phone must include country code');\nif (lead.whatsapp_followup_opt_in !== true || lead.purchased === true || lead.whatsapp_opted_out === true) return [];\nconst checkedAt = Date.parse(lead.purchase_checked_at || '');\nconst abandonedAt = Date.parse(lead.abandoned_at || '');\nif (!Number.isFinite(checkedAt) || !Number.isFinite(abandonedAt) || checkedAt - abandonedAt < 3600000 || Date.now() - checkedAt > 300000) {\n  throw new Error('Purchase must be rechecked at least one hour after abandonment and within the last five minutes');\n}\nconst product = String(lead.product_name || 'your items').slice(0, 140);\nconst checkoutUrl = String(lead.checkout_url || '');\nif (!/^https:\\/\\/[^\\s]+$/i.test(checkoutUrl)) throw new Error('A secure checkout URL is required');\nconst image = String(lead.image_url || '');\nconst hasImage = /^https:\\/\\/[^\\s]+$/i.test(image);\nconst components = [];\nif (hasImage) components.push({type: 'header', parameters: [{type: 'image', image: {link: image}}]});\ncomponents.push({type: 'body', parameters: [product, checkoutUrl].map(text => ({type: 'text', text}))});\nreturn [{json: {event_id: event.event_id, payload: {\n  messaging_product: 'whatsapp', to: phone, type: 'template', template: {\n    name: hasImage ? 'gawdee_checkout_followup_image' : 'gawdee_checkout_followup_text',\n    language: {code: 'en_US'}, components,\n  },\n}}}];\n"
+      }
+    },
+    {
+      "id": "36ac8010-7b30-5b50-8d8d-326df17e3bb5",
+      "name": "Send followup WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v23.0/REPLACE_PHONE_NUMBER_ID/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "followup event": {
+      "main": [
+        [
+          {
+            "node": "Prepare followup messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare followup messages": {
+      "main": [
+        [
+          {
+            "node": "Send followup WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "tags": []
+}

@@ -1,0 +1,625 @@
+/**
+ * Gawdee Admin API Client
+ * Parity with FastAPI /api/admin/* endpoints
+ */
+
+import { env } from '@/config/env';
+import type { CatalogItem, CatalogVariant, CatalogVariantImage } from '@/types';
+
+export interface LoyaltyAdminSettings {
+  enabled: boolean;
+  release_delay_days: number;
+  min_redemption_coins: number;
+  max_redemption_coins: number;
+  max_redemption_percent: number;
+  min_cart_paise: number;
+  expiry_months: number;
+  expiry_reminder_days: number;
+  max_earn_per_order: number;
+  referral_bonus_coins: number;
+  first_order_bonus_coins: number;
+}
+
+export interface LoyaltyAdminWallet {
+  customer_id: number;
+  customer_name?: string;
+  customer_email?: string;
+  available_coins: number;
+  spendable_coins?: number;
+  ledger_available_coins?: number;
+  lot_available_coins?: number;
+  balance_mismatch?: boolean;
+  pending_coins: number;
+  reserved_coins: number;
+  lifetime_earned: number;
+  lifetime_redeemed: number;
+  lifetime_expired: number;
+  lifetime_reversed: number;
+}
+
+export interface LoyaltyAdminTransaction {
+  id: number;
+  transaction_type: string;
+  direction: string;
+  coins: number;
+  status: string;
+  order_id: number | null;
+  reference_id: string;
+  description: string | null;
+  created_at: string;
+}
+
+export interface LoyaltyAdminReports {
+  total_coins_issued: number;
+  available_coins: number;
+  pending_coins: number;
+  redeemed_coins: number;
+  expired_coins: number;
+  reversed_coins: number;
+  customers_using_loyalty: number;
+  orders_using_loyalty: number;
+  loyalty_discount_paise: number;
+  referral_rewards: number;
+  promotional_rewards: number;
+  balance_mismatch_count?: number;
+}
+
+export interface LoyaltyProductRestriction {
+  product_id: number;
+  earn_excluded: boolean;
+  redeem_excluded: boolean;
+  multiplier: number;
+}
+
+export interface LoyaltyCategoryRestriction {
+  category_key: string;
+  earn_excluded: boolean;
+  redeem_excluded: boolean;
+  multiplier: number;
+}
+
+export interface LoyaltyRestrictions {
+  products: LoyaltyProductRestriction[];
+  categories: LoyaltyCategoryRestriction[];
+}
+
+export interface LoyaltyPackBonusRule {
+  variant_id: number;
+  pack_quantity: 1 | 2 | 3;
+  purchase_plan: 'one_time' | 'monthly' | 'two_months';
+  bonus_coins: number;
+}
+
+const API_BASE = typeof window === 'undefined' ? env.internalApiUrl : env.publicApiUrl;
+
+export interface AdminSetupPayload {
+  name: string;
+  email: string;
+  password: string;
+  password_confirmation: string;
+}
+
+export class AdminApiError extends Error {
+  constructor(public status: number, data: { detail?: unknown; message?: string }) {
+    const detail = data.detail;
+    const message = typeof detail === 'string'
+      ? detail
+      : Array.isArray(detail)
+        ? detail.map((error) => error.msg).filter(Boolean).join('; ')
+        : detail && typeof detail === 'object' && 'message' in detail
+          ? String(detail.message)
+          : data.message;
+    super(message || `Request failed with status ${status}`);
+    this.name = 'AdminApiError';
+  }
+}
+
+function getAdminToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  const local = localStorage.getItem('gawdee_admin_token');
+  if (local) return local;
+  const match = document.cookie.match(/(?:^|;\s*)admin_token=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+export function setAdminToken(token: string | null): void {
+  if (typeof window === 'undefined') return;
+  if (token) {
+    localStorage.setItem('gawdee_admin_token', token);
+    document.cookie = `admin_token=${encodeURIComponent(token)}; path=/; max-age=604800; SameSite=Lax`;
+  } else {
+    localStorage.removeItem('gawdee_admin_token');
+    document.cookie = 'admin_token=; path=/; max-age=0';
+  }
+}
+
+async function adminFetch<T = any>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const token = getAdminToken();
+  const headers: Record<string, string> = {
+    ...(options.headers as Record<string, string> || {}),
+  };
+
+  if (token && !headers['Authorization']) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  // If body is not FormData, add application/json
+  if (!(options.body instanceof FormData) && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  const res = await fetch(`${API_BASE}/admin${endpoint}`, {
+    ...options,
+    headers,
+    credentials: 'include',
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new AdminApiError(res.status, data);
+  }
+
+  return data;
+}
+
+// Same auth/headers as adminFetch but rooted at /api/catalog (canonical
+// hierarchy endpoints). Admin-only routes still require the bearer token.
+async function catalogFetch<T>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const token = getAdminToken();
+  const headers: Record<string, string> = {
+    ...(options.headers as Record<string, string> || {}),
+  };
+
+  if (token && !headers['Authorization']) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  if (!(options.body instanceof FormData) && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  const res = await fetch(`${API_BASE}/catalog${endpoint}`, {
+    ...options,
+    headers,
+    credentials: 'include',
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new AdminApiError(res.status, data);
+  }
+
+  return data;
+}
+
+export const adminApi = {
+  // Auth
+  async login(email: string, password: string) {
+    const data = await adminFetch('/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+    if (data.token) {
+      setAdminToken(data.token);
+    }
+    return data;
+  },
+
+  async me() {
+    return adminFetch('/me');
+  },
+
+  async setupStatus() {
+    return adminFetch<{ ok: boolean; setup_required: boolean }>('/setup-status');
+  },
+
+  async setup(payload: AdminSetupPayload) {
+    const data = await adminFetch('/setup', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (data.token) {
+      setAdminToken(data.token);
+    }
+    return data;
+  },
+
+  async logout() {
+    try {
+      await adminFetch('/logout', { method: 'POST' });
+    } finally {
+      setAdminToken(null);
+    }
+  },
+
+  // Stats
+  async getStats() {
+    return adminFetch('/stats');
+  },
+
+  // Products
+  async getProducts() {
+    return adminFetch('/products');
+  },
+
+  async saveProduct(payload: any) {
+    return adminFetch('/products', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async toggleProduct(productId: string) {
+    return adminFetch(`/products/${productId}/toggle`, {
+      method: 'POST',
+    });
+  },
+
+  async deleteProduct(productId: string) {
+    return adminFetch(`/products/${productId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Items & Variants
+  async getItems() {
+    return adminFetch('/items');
+  },
+  async saveItem(payload: any) {
+    return adminFetch('/items', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async toggleItem(itemId: number) {
+    return adminFetch(`/items/${itemId}/toggle`, {
+      method: 'POST',
+    });
+  },
+
+  async deleteItem(itemId: number) {
+    return adminFetch(`/items/${itemId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Canonical hierarchy (Category → Item → Variant → VariantImage)
+  async catalogAdminItems(): Promise<{ ok: boolean; items: CatalogItem[] }> {
+    return catalogFetch<{ ok: boolean; items: CatalogItem[] }>('/admin/items');
+  },
+
+  async catalogAdminGetItem(itemId: number): Promise<{ ok: boolean; item: CatalogItem }> {
+    return catalogFetch<{ ok: boolean; item: CatalogItem }>(`/items/${itemId}?include_inactive=1`);
+  },
+
+  async catalogCreateVariant(payload: Record<string, unknown>): Promise<{ ok: boolean; message?: string; variant_id: number; variant: CatalogVariant }> {
+    return catalogFetch<{ ok: boolean; message?: string; variant_id: number; variant: CatalogVariant }>('/admin/variants', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async catalogUpdateVariant(variantId: number, payload: Record<string, unknown>): Promise<{ ok: boolean; message?: string; variant: CatalogVariant }> {
+    return catalogFetch<{ ok: boolean; message?: string; variant: CatalogVariant }>(`/admin/variants/${variantId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async catalogUpdateVariantPrice(variantId: number, payload: { mrp?: number; sellingPrice?: number }): Promise<{ ok: boolean; message?: string; variant: CatalogVariant }> {
+    return catalogFetch<{ ok: boolean; message?: string; variant: CatalogVariant }>(`/admin/variants/${variantId}/price`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async catalogUpdateVariantStock(variantId: number, stock: number): Promise<{ ok: boolean; message?: string; variant: CatalogVariant }> {
+    return catalogFetch<{ ok: boolean; message?: string; variant: CatalogVariant }>(`/admin/variants/${variantId}/stock`, {
+      method: 'PATCH',
+      body: JSON.stringify({ stock }),
+    });
+  },
+
+  async catalogAddVariantImage(variantId: number, payload: { name?: string; imageUrl: string }): Promise<{ ok: boolean; message?: string; image_id: number; image: CatalogVariantImage }> {
+    return catalogFetch<{ ok: boolean; message?: string; image_id: number; image: CatalogVariantImage }>(`/admin/variants/${variantId}/images`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async catalogUpdateVariantImage(imageId: number, payload: Record<string, unknown>): Promise<{ ok: boolean; message?: string; image_id?: number }> {
+    return catalogFetch<{ ok: boolean; message?: string; image_id?: number }>(`/admin/variant-images/${imageId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async catalogDeleteVariantImage(imageId: number): Promise<{ ok: boolean; message?: string; image_id?: number }> {
+    return catalogFetch<{ ok: boolean; message?: string; image_id?: number }>(`/admin/variant-images/${imageId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Categories
+  async getCategories() {
+    return adminFetch('/categories');
+  },
+
+  async saveCategory(payload: any) {
+    return adminFetch('/categories', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async deleteCategory(categoryId: number) {
+    return adminFetch(`/categories/${categoryId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Orders
+  async getOrders(status?: string, search?: string) {
+    const params = new URLSearchParams();
+    if (status && status !== 'all') params.set('status', status);
+    if (search) params.set('search', search);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return adminFetch(`/orders${qs}`);
+  },
+
+  async getOrderDetail(orderId: number) {
+    return adminFetch(`/orders/${orderId}`);
+  },
+
+  async getCustomerReviews(search = '', sort = 'newest', productId?: number) {
+    const params = new URLSearchParams();
+    if (search) params.set('search', search);
+    if (sort) params.set('sort', sort);
+    if (productId) params.set('product_id', String(productId));
+    return adminFetch(`/customer-reviews?${params.toString()}`);
+  },
+
+  async updateOrderStatus(orderId: number, status: string, note?: string) {
+    return adminFetch(`/orders/${orderId}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ status, note }),
+    });
+  },
+
+  async updateOrderTracking(orderId: number, trackingNumber: string, courierName?: string, trackingUrl?: string) {
+    return adminFetch(`/orders/${orderId}/tracking`, {
+      method: 'POST',
+      body: JSON.stringify({
+        tracking_number: trackingNumber,
+        courier_name: courierName,
+        tracking_url: trackingUrl,
+      }),
+    });
+  },
+
+  // Reels
+  async getReels() {
+    return adminFetch('/reels');
+  },
+
+  async saveReel(payload: any) {
+    return adminFetch('/reels', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async deleteReel(reelId: number) {
+    return adminFetch(`/reels/${reelId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Offers
+  async getOffers() {
+    return adminFetch('/offers');
+  },
+
+  async saveOffer(payload: any) {
+    return adminFetch('/offers', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async deleteOffer(offerId: number) {
+    return adminFetch(`/offers/${offerId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Banners
+  async getBanners() {
+    return adminFetch('/banners');
+  },
+
+  async saveBanner(payload: any) {
+    return adminFetch('/banners', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async deleteBanner(bannerId: number) {
+    return adminFetch(`/banners/${bannerId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Banners Two
+  async getBannersTwo() {
+    return adminFetch('/banners-two');
+  },
+
+  async saveBannerTwo(payload: any) {
+    return adminFetch('/banners-two', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async deleteBannerTwo(bannerId: number) {
+    return adminFetch(`/banners-two/${bannerId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Testimonials
+  async getTestimonials() {
+    return adminFetch('/testimonials');
+  },
+
+  async getReviews() {
+    // Note: Mocking this until backend endpoint exists, or if it does, it will hit it
+    return adminFetch<{ ok: boolean; reviews: any[] }>('/reviews').catch(() => ({ ok: true, reviews: [] }));
+  },
+
+  async saveTestimonial(payload: any) {
+    return adminFetch('/testimonials', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async deleteTestimonial(testimonialId: number) {
+    return adminFetch(`/testimonials/${testimonialId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Blog
+  async getBlog() {
+    return adminFetch('/blog');
+  },
+
+  async saveBlog(payload: any) {
+    return adminFetch('/blog', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async deleteBlog(postId: number) {
+    return adminFetch(`/blog/${postId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Combos (curated bundles for `nhp-combos__grid`)
+  async getCombos() {
+    return adminFetch('/combos');
+  },
+
+  async saveCombo(payload: any) {
+    return adminFetch('/combos', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async toggleCombo(comboId: number) {
+    return adminFetch(`/combos/${comboId}/toggle`, {
+      method: 'POST',
+    });
+  },
+
+  async deleteCombo(comboId: number) {
+    return adminFetch(`/combos/${comboId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Settings
+  async getSettings() {
+    return adminFetch('/settings');
+  },
+
+  async saveSettings(payload: Record<string, any>) {
+    return adminFetch('/settings', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  // Loyalty administration. The fixed earning and coin value rules are enforced
+  // by the backend and are intentionally absent from the editable settings.
+  async getLoyaltySettings() {
+    return adminFetch<{ ok: boolean; settings: LoyaltyAdminSettings }>('/loyalty/settings');
+  },
+
+  async saveLoyaltySettings(settings: LoyaltyAdminSettings) {
+    return adminFetch<{ ok: boolean; settings: LoyaltyAdminSettings }>('/loyalty/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    });
+  },
+
+  async getLoyaltyWallets(search = '') {
+    const params = new URLSearchParams();
+    if (search.trim()) params.set('search', search.trim());
+    const query = params.toString();
+    return adminFetch<{ ok: boolean; wallets: LoyaltyAdminWallet[] }>(`/loyalty/wallets${query ? `?${query}` : ''}`);
+  },
+
+  async getLoyaltyWallet(customerId: number) {
+    return adminFetch<{ ok: boolean; wallet: LoyaltyAdminWallet; transactions: LoyaltyAdminTransaction[] }>(`/loyalty/wallets/${customerId}`);
+  },
+
+  async adjustLoyaltyWallet(payload: { customer_id: number; coins: number; reason: string; reference_id: string }) {
+    return adminFetch<{ ok: boolean; wallet?: LoyaltyAdminWallet }>('/loyalty/adjustment', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async getLoyaltyReports() {
+    return adminFetch<{ ok: boolean; reports: LoyaltyAdminReports }>('/loyalty/reports');
+  },
+
+  async getLoyaltyRestrictions() {
+    return adminFetch<{ ok: boolean } & LoyaltyRestrictions>('/loyalty/restrictions');
+  },
+
+  async saveLoyaltyRestrictions(restrictions: LoyaltyRestrictions) {
+    return adminFetch<{ ok: boolean } & LoyaltyRestrictions>('/loyalty/restrictions', {
+      method: 'PUT',
+      body: JSON.stringify(restrictions),
+    });
+  },
+
+  async getLoyaltyPackBonuses() {
+    return adminFetch<{ ok: boolean; rules: LoyaltyPackBonusRule[] }>('/loyalty/pack-bonuses');
+  },
+
+  async saveLoyaltyPackBonuses(rules: LoyaltyPackBonusRule[]) {
+    return adminFetch<{ ok: boolean; rules: LoyaltyPackBonusRule[] }>('/loyalty/pack-bonuses', {
+      method: 'PUT',
+      body: JSON.stringify({ rules }),
+    });
+  },
+
+  // Upload Media
+  async uploadMedia(file: File, folder: string = 'products') {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', folder);
+    return adminFetch('/upload', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+};

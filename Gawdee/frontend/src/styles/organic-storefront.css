@@ -1,0 +1,561 @@
+/* ==========================================================================
+   GAWDEE ORGANIC STOREFRONT — master design system
+   Canvas: warm cream #FAF7F2 · Ink: deep herb green · Accent: raw honey amber
+   Type: Fraunces serif display / clean sans text · Scale ratio 1.25
+   Rules: every spacing value is a --org-space-* token · one surface radius
+   (20px) + pill controls (999px) · single honey accent · no gradients
+   This file is additive: legacy stylesheets are never edited from here.
+   ========================================================================== */
+
+:root {
+  /* TYPE — 1.25 major third · Optima body / Roboto Slab display */
+  --org-font-display: "Roboto Slab", Georgia, "Times New Roman", serif;
+  --org-font-text: Optima, Candara, "Segoe UI", system-ui, -apple-system, sans-serif;
+  --org-step--1: 0.8rem;
+  --org-step-0: 1rem;
+  --org-step-1: 1.25rem;
+  --org-step-2: 1.563rem;
+  --org-step-3: 1.953rem;
+
+  /* SPACE — 0.25rem base unit, multiples only */
+  --org-space-3xs: 0.25rem;
+  --org-space-2xs: 0.5rem;
+  --org-space-xs: 0.75rem;
+  --org-space-s: 1rem;
+  --org-space-m: 1.5rem;
+  --org-space-l: 2rem;
+  --org-space-xl: 3rem;
+
+  /* COLOR — warm cream canvas, herb ink, one honey accent */
+  --org-cream: #faf7f2;
+  --org-cream-deep: #f3ede1;
+  --org-surface: #ffffff;
+  --org-ink: #1e2b25;
+  --org-ink-2: #55645c;
+  --org-ink-3: #8a978f;
+  --org-line: #e7dfd2;
+  --org-forest: #1f4d3a;
+  --org-forest-deep: #143527;
+  --org-leaf: #2e7d5b;
+  --org-leaf-soft: #e5f2eb;
+  --org-honey: #c98f1f;
+  --org-honey-deep: #a86f0e;
+  --org-honey-soft: #f7ecd4;
+
+  /* FORM */
+  --org-radius: 20px;
+  --org-pill: 999px;
+  --org-border: 1px solid var(--org-line);
+  --org-shadow: 0 10px 30px rgba(31, 77, 58, 0.1);
+
+  /* MOTION */
+  --org-dur-fast: 120ms;
+  --org-dur: 220ms;
+  --org-ease: cubic-bezier(0.2, 0, 0, 1);
+  --org-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* MOBILE BOTTOM NAV */
+  --org-nav-h: 68px;
+}
+
+/* ── Global density: smaller root scales ALL rem-based type + spacing ──────
+   Gives a wider, denser view on every page. Tweak this one value (16px = browser default). */
+html {
+  font-size: 14px;
+}
+
+/* ── Base canvas ─────────────────────────────────────────────────────────── */
+body {
+  background: var(--org-cream);
+  color: var(--org-ink);
+  font-family: var(--org-font-text);
+}
+
+.commerce-section__heading h2,
+.brand-story-header h2,
+.testimonial-reference-head h2,
+.ref-buybox h1,
+.org-card__title {
+  font-family: var(--org-font-display);
+  letter-spacing: -0.01em;
+}
+
+/* ── Product card ────────────────────────────────────────────────────────── */
+.org-card {
+  background: var(--org-surface);
+  border: var(--org-border);
+  border-radius: var(--org-radius);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: box-shadow var(--org-dur) var(--org-ease), transform var(--org-dur) var(--org-ease);
+}
+
+.org-card:hover {
+  box-shadow: var(--org-shadow);
+}
+
+.org-card__media {
+  position: relative;
+  display: block;
+  background: var(--org-cream);
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+}
+
+.org-card__media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform var(--org-dur) var(--org-ease-out);
+}
+
+.org-card:hover .org-card__media img {
+  transform: scale(1.04);
+}
+
+/* Neutral empty tile — shown only when an item genuinely has no imagery.
+   Decorative pattern, never a fake product photo. */
+.org-card__noimage {
+  width: 100%;
+  height: 100%;
+  min-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 30% 25%, rgba(31, 77, 58, 0.07), transparent 55%),
+    radial-gradient(circle at 75% 80%, rgba(31, 77, 58, 0.05), transparent 50%),
+    var(--org-cream);
+  color: var(--org-forest);
+  font-size: 3rem;
+  opacity: 0.7;
+}
+
+.org-card__badge {
+  position: absolute;
+  top: var(--org-space-xs);
+  left: var(--org-space-xs);
+  background: var(--org-forest);
+  color: #fff;
+  font-size: var(--org-step--1);
+  font-weight: 700;
+  padding: var(--org-space-3xs) var(--org-space-xs);
+  border-radius: var(--org-pill);
+  max-width: calc(100% - var(--org-space-m));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.org-card__off {
+  position: absolute;
+  top: var(--org-space-xs);
+  right: var(--org-space-xs);
+  background: var(--org-honey);
+  color: #fff;
+  font-size: var(--org-step--1);
+  font-weight: 800;
+  padding: var(--org-space-3xs) var(--org-space-xs);
+  border-radius: var(--org-pill);
+}
+
+.org-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--org-space-2xs);
+  padding: var(--org-space-s);
+  flex: 1;
+}
+
+.org-card__trust {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--org-space-3xs);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.org-card__trust li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--org-space-3xs);
+  font-size: var(--org-step--1);
+  font-weight: 700;
+  color: var(--org-leaf);
+  background: var(--org-leaf-soft);
+  border-radius: var(--org-pill);
+  padding: var(--org-space-3xs) var(--org-space-2xs);
+  white-space: nowrap;
+}
+
+.org-card__trust li i {
+  font-size: 0.8rem;
+}
+
+.org-card__meta {
+  font-size: var(--org-step--1);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--org-ink-3);
+}
+
+.org-card__title {
+  font-size: var(--org-step-1);
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 0;
+  color: var(--org-ink);
+}
+
+.org-card__title a {
+  color: inherit;
+}
+
+.org-card__rating {
+  display: flex;
+  align-items: center;
+  gap: var(--org-space-3xs);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--org-ink);
+}
+
+.org-card__rating i {
+  color: var(--org-honey);
+}
+
+.org-card__rating small {
+  font-weight: 500;
+  color: var(--org-ink-3);
+}
+
+.org-card__price {
+  display: flex;
+  align-items: baseline;
+  gap: var(--org-space-2xs);
+  margin-top: auto;
+  padding-top: var(--org-space-2xs);
+}
+
+.org-card__price strong {
+  font-size: var(--org-step-1);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--org-ink);
+}
+
+.org-card__price s {
+  font-size: 0.85rem;
+  color: var(--org-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.org-card__price em {
+  font-style: normal;
+  font-size: var(--org-step--1);
+  font-weight: 800;
+  color: var(--org-honey-deep);
+}
+
+/* Actions: Quick Add / stepper / pack picker — all five states */
+.org-card__actions {
+  display: flex;
+  gap: var(--org-space-2xs);
+  margin-top: var(--org-space-2xs);
+}
+
+.org-btn {
+  flex: 1;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--org-space-2xs);
+  border: none;
+  border-radius: var(--org-pill);
+  background: var(--org-forest);
+  color: #fff;
+  font-family: var(--org-font-text);
+  font-size: 0.9rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background var(--org-dur-fast) var(--org-ease), transform var(--org-dur-fast) var(--org-ease);
+}
+
+.org-btn:hover {
+  background: var(--org-forest-deep);
+}
+
+.org-btn:active {
+  transform: scale(0.97);
+}
+
+.org-btn:focus-visible {
+  outline: 2px solid var(--org-honey);
+  outline-offset: 2px;
+}
+
+.org-btn:disabled {
+  background: var(--org-cream-deep);
+  color: var(--org-ink-3);
+  cursor: not-allowed;
+  transform: none;
+}
+
+.org-btn--ghost {
+  background: transparent;
+  color: var(--org-forest);
+  border: 1px solid var(--org-forest);
+  flex: 0 0 auto;
+  padding-left: var(--org-space-s);
+  padding-right: var(--org-space-s);
+}
+
+.org-btn--ghost:hover {
+  background: var(--org-leaf-soft);
+}
+
+.org-stepper {
+  flex: 1;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--org-forest);
+  border-radius: var(--org-pill);
+  padding: var(--org-space-3xs);
+  color: #fff;
+}
+
+.org-stepper button {
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--org-dur-fast) var(--org-ease), transform var(--org-dur-fast) var(--org-ease);
+}
+
+.org-stepper button:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.org-stepper button:active {
+  transform: scale(0.92);
+}
+
+.org-stepper button:focus-visible {
+  outline: 2px solid var(--org-honey);
+  outline-offset: 2px;
+}
+
+.org-stepper button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.org-stepper strong {
+  font-variant-numeric: tabular-nums;
+  font-size: 1rem;
+  min-width: 2ch;
+  text-align: center;
+}
+
+/* ── Homepage hero runs full-bleed beneath the floating header ─────────────
+   The storefront header is fixed + transparent by design; body padding-top
+   otherwise leaves a blank band above the hero. Pull the first-child hero
+   up and restore its internal clearance so content never hides under pills. */
+.commerce-home #main-content > .gx-hero:first-child {
+  margin-top: -114px;
+  padding-top: 114px;
+}
+
+/* ── Icon-only header actions ──────────────────────────────────────────────
+   Search / account / bag show icons only; the bag keeps its count badge
+   overlaid on the icon. Expanding search preserves the full input. */
+.commerce-actions .commerce-action {
+  min-width: 44px;
+  min-height: 44px;
+  justify-content: center;
+  padding: 7px 12px;
+}
+
+.commerce-actions .commerce-action:focus-visible {
+  outline: 2px solid var(--org-honey, #c98f1f);
+  outline-offset: 2px;
+}
+
+/* Count badge sits on top of the bag icon */
+.commerce-action__icon b[data-cart-count] {
+  position: absolute;
+  top: -8px;
+  right: -10px;
+  margin-left: 0;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Collapsible desktop search: icon toggles the input open/closed */
+.header-search {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.header-search .header-search-form {
+  width: 0;
+  opacity: 0;
+  visibility: hidden;
+  overflow: hidden;
+  transition: width 0.25s ease, opacity 0.2s ease, visibility 0.2s;
+}
+
+.header-search.is-open {
+  gap: 8px;
+}
+
+.header-search.is-open .header-search-form {
+  width: auto;
+  opacity: 1;
+  visibility: visible;
+  overflow: visible;
+}
+
+/* ── Mobile sticky bottom nav ────────────────────────────────────────────── */
+.mobile-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-bottom-nav {
+    position: fixed;
+    left: var(--org-space-xs);
+    right: var(--org-space-xs);
+    bottom: max(var(--org-space-xs), env(safe-area-inset-bottom));
+    z-index: 900;
+    display: flex;
+    align-items: stretch;
+    gap: var(--org-space-3xs);
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: var(--org-border);
+    border-radius: var(--org-radius);
+    box-shadow: var(--org-shadow);
+    padding: var(--org-space-2xs);
+    min-height: var(--org-nav-h);
+    transition: transform 0.3s ease-in-out;
+  }
+  
+  .mobile-bottom-nav.is-hidden {
+    transform: translateY(calc(100% + var(--org-space-xs) + env(safe-area-inset-bottom)));
+  }
+
+  .mobile-bottom-nav__tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-height: 52px;
+    border: none;
+    border-radius: 14px;
+    background: transparent;
+    color: var(--org-ink-2);
+    font-family: var(--org-font-text);
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+    position: relative;
+    transition: background var(--org-dur-fast) var(--org-ease), color var(--org-dur-fast) var(--org-ease);
+  }
+
+  .mobile-bottom-nav__tab i {
+    font-size: 1.35rem;
+    line-height: 1;
+  }
+
+  .mobile-bottom-nav__tab:hover {
+    background: var(--org-cream);
+  }
+
+  .mobile-bottom-nav__tab:active {
+    transform: scale(0.96);
+  }
+
+  .mobile-bottom-nav__tab:focus-visible {
+    outline: 2px solid var(--org-honey);
+    outline-offset: 1px;
+  }
+
+  .mobile-bottom-nav__tab.is-active {
+    background: var(--org-forest);
+    color: #fff;
+  }
+
+  .mobile-bottom-nav__badge {
+    position: absolute;
+    top: 4px;
+    right: calc(50% - 22px);
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border-radius: var(--org-pill);
+    background: var(--org-honey);
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-variant-numeric: tabular-nums;
+    border: 2px solid #fff;
+  }
+
+  .mobile-bottom-nav__soon {
+    position: absolute;
+    top: 4px;
+    right: calc(50% - 26px);
+    background: var(--org-honey-soft);
+    color: var(--org-honey-deep);
+    font-size: 0.55rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    border-radius: var(--org-pill);
+    padding: 1px 5px;
+    border: 1px solid var(--org-honey);
+  }
+
+  /* Coexistence: lift floating pills + floats above the bottom nav */
+  body:has(.mobile-bottom-nav) .checkout-sticky-bar {
+    bottom: calc(var(--org-nav-h) + var(--org-space-m) + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  body:has(.mobile-bottom-nav) .pdp-sticky-bar {
+    bottom: calc(var(--org-nav-h) + var(--org-space-m) + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  body:has(.mobile-bottom-nav) .whatsapp-float,
+  body:has(.mobile-bottom-nav) .ai-float {
+    bottom: calc(var(--org-nav-h) + var(--org-space-xl) + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  /* Bottom breathing room so the nav never covers footers/CTAs */
+  body:has(.mobile-bottom-nav) #main-content {
+    padding-bottom: calc(var(--org-nav-h) + var(--org-space-l));
+  }
+}
