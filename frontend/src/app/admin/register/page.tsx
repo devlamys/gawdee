@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { adminApi } from '@/lib/admin-api';
+import { adminApi, AdminApiError } from '@/lib/admin-api';
+import { useAdminAuth } from '@/context/AdminAuthContext';
 import '@/styles/admin.css';
 
 /**
@@ -13,6 +14,7 @@ import '@/styles/admin.css';
  */
 export default function AdminRegisterPage() {
   const router = useRouter();
+  const { setup } = useAdminAuth();
 
   const [checking, setChecking] = useState(true);
   const [name, setName] = useState('');
@@ -44,18 +46,17 @@ export default function AdminRegisterPage() {
     }
     setLoading(true);
     try {
-      const res = await adminApi.setup({
+      await setup({
         name: name.trim(),
         email: email.trim(),
         password,
         password_confirmation: confirmPassword,
       });
-      if (res?.ok) {
-        router.push('/admin');
-      }
-    } catch (err: any) {
-      const message = err.message || 'Could not create the administrator account.';
-      if (message.toLowerCase().includes('already exists')) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Could not create the administrator account.';
+      // Only a closed setup (an admin exists) should send the user to login.
+      // A customer email conflict is a validation error to display on this form.
+      if (err instanceof AdminApiError && err.status === 403) {
         router.replace('/admin/login');
         return;
       }
@@ -115,7 +116,7 @@ export default function AdminRegisterPage() {
             <p>Create the owner account to continue.</p>
 
             {error && (
-              <div className="admin-alert admin-alert--error" style={{ marginBottom: '1.2rem' }}>
+              <div role="alert" className="admin-alert admin-alert--error" style={{ marginBottom: '1.2rem' }}>
                 <i className="ph ph-warning-circle"></i> {error}
               </div>
             )}

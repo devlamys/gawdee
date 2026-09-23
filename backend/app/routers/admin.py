@@ -151,7 +151,7 @@ async def admin_setup(payload: AdminSetupPayload, response: Response):
         )
     except Exception as exc:
         if "unique" in str(exc).lower():
-            raise HTTPException(status_code=422, detail="An account already exists for this email.")
+            raise HTTPException(status_code=422, detail="This email is already registered. Use a different email for the administrator account.")
         raise HTTPException(status_code=422, detail="Unable to create the administrator account.")
     user = await fetch_one("SELECT * FROM users WHERE lower(email) = ? AND role = 'admin'", (email,))
     if not user:

@@ -38,7 +38,7 @@ Open http://localhost:3000.
 | Variable | Where | Purpose / default |
 |---|---|---|
 | `BACKEND_ORIGIN` | build (`next.config.ts` only) | Backend for `/api` rewrites (`http://localhost:8001`) |
-| `ALLOWED_DEV_ORIGINS` | build | Extra dev origins (`localhost,127.0.0.1`) |
+| `ALLOWED_DEV_ORIGINS` | build | Extra dev hostnames; include `*.trycloudflare.com` for Quick Tunnels |
 | `INTERNAL_API_URL` | server-only | SSR / route handlers (`http://127.0.0.1:8001/api`) |
 | `NEXT_PUBLIC_API_URL` | browser | Browser API base (`/api`, via proxy) |
 | `NEXT_PUBLIC_RAZORPAY_CHECKOUT_URL` | browser | Razorpay checkout.js script |
@@ -53,3 +53,17 @@ Rules:
 ## How it connects to the backend
 
 `next.config.ts` rewrites every `/api/:path*` request to `${BACKEND_ORIGIN}/api/:path*`, so the browser always calls same-origin `/api/...` and Next.js forwards it to FastAPI. Server components / route handlers use `INTERNAL_API_URL` to reach the backend directly.
+
+## Cloudflare Quick Tunnel
+
+Keep the backend running on port 8001 and point the tunnel at the frontend:
+
+```bash
+cloudflared tunnel --url http://localhost:3000
+```
+
+The browser uses the tunnel's `/api` path, which Next.js forwards to the local backend. Only port 3000 needs a tunnel.
+
+If `frontend/.env.local` sets `ALLOWED_DEV_ORIGINS`, include `*.trycloudflare.com` (or your exact tunnel hostname) in that comma-separated list. The bare `trycloudflare.com` does not match tunnel subdomains. For a custom domain, add its exact hostname. Restart `npm run dev` after changing environment settings, then reload the tunnel page.
+
+Open `https://<your-tunnel-host>/api/health` to check the proxy; it should return `{"ok":true,"service":"gawdee-api"}`. A `403 Unauthorized` for `/_next/` resources with the tunnel origin indicates a missing allowed dev hostname.
