@@ -1,0 +1,25 @@
+[Unit]
+Description=Gawdee %i frontend
+After=network-online.target gawdee-backend@%i.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gawdee-%i
+Group=gawdee-%i
+WorkingDirectory=/srv/gawdee/%i/current/frontend
+EnvironmentFile=/srv/gawdee/%i/shared/runtime.env
+EnvironmentFile=/srv/gawdee/%i/shared/frontend.env
+Environment=NODE_ENV=production
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/local/bin/node /srv/gawdee/%i/current/frontend/node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port ${FRONTEND_PORT}
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=60
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

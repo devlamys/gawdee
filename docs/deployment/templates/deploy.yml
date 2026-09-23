@@ -1,0 +1,80 @@
+name: Deploy
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Deployment environment
+        required: true
+        default: staging
+        type: choice
+        options: [staging, production]
+permissions:
+  contents: read
+concurrency:
+  group: deploy-${{ inputs.target || 'staging' }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Permit only release branches
+        env:
+          TARGET: ${{ inputs.target || 'staging' }}
+          REF: ${{ github.ref }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          case "$TARGET:$REF:$EVENT" in
+            staging:refs/heads/staging:push) ;;
+            staging:refs/heads/staging:workflow_dispatch) ;;
+            staging:refs/heads/main:workflow_dispatch) ;;
+            production:refs/heads/main:workflow_dispatch) ;;
+            *) echo 'Deployment branch or trigger not allowed'; exit 1 ;;
+          esac
+  ci:
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+  deploy:
+    needs: ci
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    # Remove this line ONLY for the private GitHub Free fallback in the README.
+    environment: ${{ inputs.target || 'staging' }}
+    env:
+      TARGET: ${{ inputs.target || 'staging' }}
+      SSH_HOST: ${{ secrets[format('{0}_SSH_HOST', inputs.target == 'production' && 'PRODUCTION' || 'STAGING')] }}
+      SSH_KEY: ${{ secrets[format('{0}_SSH_KEY', inputs.target == 'production' && 'PRODUCTION' || 'STAGING')] }}
+      SSH_KNOWN_HOSTS: ${{ secrets[format('{0}_SSH_KNOWN_HOSTS', inputs.target == 'production' && 'PRODUCTION' || 'STAGING')] }}
+      SITE_URL: ${{ vars[format('{0}_SITE_URL', inputs.target == 'production' && 'PRODUCTION' || 'STAGING')] }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Validate inputs and create release archive
+        run: |
+          test -n "$SSH_HOST" && test -n "$SSH_KEY" && test -n "$SSH_KNOWN_HOSTS" && test -n "$SITE_URL"
+          [[ "$SSH_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          bash docs/deployment/scripts/package.sh "$RUNNER_TEMP/$GITHUB_SHA.tar.gz"
+      - name: Configure SSH
+        run: |
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/deploy_key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/deploy_key" "$HOME/.ssh/known_hosts"
+      - name: Upload and deploy the tested commit
+        run: |
+          scp -i "$HOME/.ssh/deploy_key" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$RUNNER_TEMP/$GITHUB_SHA.tar.gz" \
+            "gawdee-$TARGET@$SSH_HOST:/srv/gawdee/$TARGET/incoming/$GITHUB_SHA.tar.gz"
+          ssh -i "$HOME/.ssh/deploy_key" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=10 \
+            "gawdee-$TARGET@$SSH_HOST" \
+            "/usr/local/lib/gawdee/deploy.sh $TARGET $GITHUB_SHA"
+      - name: Verify public HTTPS deployment
+        run: |
+          test "$(curl --fail --silent --show-error --retry 3 --max-time 30 "$SITE_URL/deploy-version.txt?release=$GITHUB_SHA")" = "$GITHUB_SHA"
+          curl --fail --silent --show-error --retry 3 --max-time 30 "$SITE_URL/api/health"
+      - name: Remove runner SSH credentials
+        if: always()
+        run: rm -f "$HOME/.ssh/deploy_key" "$HOME/.ssh/known_hosts"
