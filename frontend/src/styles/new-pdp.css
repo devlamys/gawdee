@@ -422,6 +422,13 @@
   margin: 0;
 }
 
+.pv-actions-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+  width: 100%;
+}
+
 .pv-add-cart {
   width: 100%;
   background: #2a5a2e;
@@ -432,11 +439,25 @@
   font-size: 1.3rem;
   font-weight: 700;
   cursor: pointer;
-  margin-top: 12px;
   transition: opacity 0.2s;
+  flex: 1;
 }
 
-.pv-add-cart:hover {
+.pv-buy-now {
+  width: 100%;
+  background: #111;
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 18px 14px;
+  font-size: 1.3rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  flex: 1;
+}
+
+.pv-add-cart:hover, .pv-buy-now:hover {
   opacity: 0.9;
 }
 
@@ -605,9 +626,13 @@
 
 @media (max-width: 768px) {
   .pv-po-box,
-  .pv-add-cart {
+  .pv-actions-row {
     width: 92%;
     margin-left: auto;
     margin-right: auto;
+  }
+  
+  .pv-actions-row {
+    flex-direction: column;
   }
 }

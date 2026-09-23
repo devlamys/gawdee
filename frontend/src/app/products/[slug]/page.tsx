@@ -466,9 +466,9 @@ export default function ProductDetailPage() {
             </div>
 
             <div className="pv-price-row">
-              <strong className="pv-price">{money(purchaseType === 'subscribe' ? selected.sellingPrice * 0.85 : selected.sellingPrice)}</strong>
+              <strong className="pv-price">{money((purchaseType === 'subscribe' ? selected.sellingPrice * 0.85 : selected.sellingPrice) * quantity)}</strong>
               {selected.mrp > selected.sellingPrice && (
-                <s className="pv-price-strike">{money(selected.mrp)}</s>
+                <s className="pv-price-strike">{money(selected.mrp * quantity)}</s>
               )}
               <span className="pv-price-badge">Save {discount > 0 ? discount : 25}%</span>
             </div>
@@ -606,13 +606,24 @@ export default function ProductDetailPage() {
               </div>
             </div>
 
-            <button 
-              className="pv-add-cart" 
-              type="button"
-              onClick={available ? handleBuyNow : handleNotifyMe}
-            >
-               {available ? 'ADD TO CART' : 'NOTIFY ME'}
-            </button>
+            <div className="pv-actions-row">
+              <button 
+                className="pv-add-cart" 
+                type="button"
+                onClick={available ? handleAddToCart : handleNotifyMe}
+              >
+                 {available ? 'ADD TO CART' : 'NOTIFY ME'}
+              </button>
+              {available && (
+                <button 
+                  className="pv-buy-now" 
+                  type="button"
+                  onClick={handleBuyNow}
+                >
+                   BUY NOW
+                </button>
+              )}
+            </div>
 
             <div style={{ marginTop: '32px', marginBottom: '32px' }}>
               <h3 style={{ fontSize: '1.05rem', fontWeight: 800, textTransform: 'uppercase', color: '#111', marginBottom: '12px' }}>
@@ -784,14 +795,26 @@ export default function ProductDetailPage() {
               <i className="ph ph-plus"></i>
             </button>
           </div>
-          <button
-            type="button"
-            className="pdp-sticky-bar__btn"
-            onClick={available ? handleAddToCart : handleNotifyMe}
-            disabled={false}
-          >
-            {!available ? 'NOTIFY ME' : 'ADD TO CART'}
-          </button>
+          <div style={{ display: 'flex', flex: 1, gap: '8px' }}>
+            <button
+              type="button"
+              className="pdp-sticky-bar__btn"
+              onClick={available ? handleAddToCart : handleNotifyMe}
+              disabled={false}
+            >
+              {!available ? 'NOTIFY ME' : 'ADD TO CART'}
+            </button>
+            {available && (
+              <button
+                type="button"
+                className="pdp-sticky-bar__btn"
+                onClick={handleBuyNow}
+                style={{ background: '#111', color: '#fff' }}
+              >
+                BUY NOW
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Notify Me toast — custom styled alert, auto-dismisses */}
